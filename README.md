@@ -5,100 +5,192 @@ API REST independente para persistência de dados da **Ficha de RPG Web**, desen
 ---
 
 ## 🛠️ Stack
-- **Runtime**: Node.js 18+ (ES Modules)
-- **Framework**: Express.js
-- **ORM**: Sequelize v6
-- **Banco de Dados**: PostgreSQL 14+ (`pg` + `pg-hstore`)
-- **Comunicação**: CORS habilitado para o frontend Next.js
+
+| Tecnologia | Versão | Papel |
+|:---|:---|:---|
+| Node.js | 18+ | Runtime (ES Modules) |
+| Express.js | 4.x | Framework HTTP |
+| Sequelize | 6.x | ORM e auto-sync de tabelas |
+| PostgreSQL | 14+ | Banco de dados principal |
+| pg / pg-hstore | 8.x | Driver nativo PostgreSQL |
+| dotenv | 16.x | Variáveis de ambiente |
+| nodemon | 3.x | Hot-reload em desenvolvimento |
 
 ---
 
 ## 📂 Estrutura de Pastas
+
 ```
 Rpg-backend/
 ├── database/
-│   ├── schema.sql          # Schema completo do banco (tabelas, índices, triggers)
-│   └── setup.sql           # Script para criar o DB e usuário PostgreSQL
+│   ├── schema.sql             # ← Schema SQL completo (tabelas, índices, triggers)
+│   └── setup.sql              # ← Script para criar banco e usuário (rodar 1x como postgres)
 ├── src/
 │   ├── config/
-│   │   └── database.js     # Conexão e pool do Sequelize
+│   │   └── database.js        # Conexão Sequelize + pool de conexões
 │   ├── controllers/
-│   │   └── characterController.js  # Lógica dos endpoints (CRUD, sync, cofre)
+│   │   └── characterController.js  # Lógica de todos os endpoints
 │   ├── models/
-│   │   ├── Character.js    # Entidade com os 7 atributos e todos os campos
-│   │   ├── InventoryItem.js # Itens do inventário
-│   │   ├── Contract.js     # Missões e contratos
-│   │   └── index.js        # Relacionamentos e exportações
+│   │   ├── Character.js       # Tabela characters (atributos d20, moedas, cofre, montaria)
+│   │   ├── InventoryItem.js   # Tabela inventory_items (FK → characters)
+│   │   ├── Contract.js        # Tabela contracts (FK → characters)
+│   │   └── index.js           # Relacionamentos e exportações
 │   ├── routes/
-│   │   └── characterRoutes.js  # Rotas /api/characters
-│   └── server.js           # Inicialização do Express e auto-sync
-├── docker-compose.yml      # PostgreSQL local via Docker (recomendado)
-├── .env.example            # Variáveis de ambiente de referência
+│   │   └── characterRoutes.js # Definição das rotas /api/characters
+│   └── server.js              # Bootstrap do Express + sequelize.sync()
+├── docker-compose.yml         # PostgreSQL local via Docker (recomendado)
+├── .env.example               # Modelo das variáveis de ambiente
+├── .env                       # Suas credenciais locais (NÃO commitado)
+├── .gitignore
 ├── package.json
 └── README.md
 ```
 
 ---
 
-## 🚀 Como Executar em Outra Máquina
+## ⚙️ Variáveis de Ambiente
 
-### Opção A — Com Docker (recomendado, zero configuração)
-
-> Necessário: [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/)
+Copie o arquivo de exemplo e edite com suas credenciais:
 
 ```bash
-# 1. Sobe o PostgreSQL (cria o banco e aplica o schema automaticamente)
-docker compose up -d
-
-# 2. Instala as dependências Node
-npm install
-
-# 3. Copia e configura o .env
 cp .env.example .env
-# Edite .env e defina DATABASE_URL:
-# DATABASE_URL=postgres://rpg_user:rpg_senha_aqui@localhost:5432/rpg_ficha
-
-# 4. Inicia o servidor
-npm run dev
 ```
 
-> ✅ O Docker Compose aplica `database/schema.sql` automaticamente na primeira inicialização.
-
----
-
-### Opção B — PostgreSQL instalado diretamente
-
-```bash
-# 1. Cria o banco e o usuário (execute como superusuário)
-psql -U postgres -f database/setup.sql
-
-# 2. Aplica o schema (cria as tabelas, índices e triggers)
-psql -U rpg_user -d rpg_ficha -f database/schema.sql
-
-# 3. Instala dependências e configura o .env
-npm install
-cp .env.example .env
-# Edite .env com as credenciais corretas
-
-# 4. Inicia o servidor
-npm run dev
-```
-
----
-
-## ⚙️ Variáveis de Ambiente (`.env`)
-
-Copie `.env.example` para `.env` e preencha:
+Conteúdo do `.env`:
 
 ```env
+# Porta HTTP do servidor Express
 PORT=3333
+
+# String de conexão PostgreSQL
+# Formato: postgres://USUARIO:SENHA@HOST:PORTA/BANCO
 DATABASE_URL=postgres://rpg_user:rpg_senha_aqui@localhost:5432/rpg_ficha
+
+# Origem permitida pelo CORS (endereço do frontend Next.js)
 CORS_ORIGIN=http://localhost:3000
+
+# Ambiente: development | production
 NODE_ENV=development
-# DB_SSL=true   ← Descomente apenas se usar SSL (ex: Render, Neon, Supabase)
+
+# Descomente para conexões SSL (ex: Render, Neon, Supabase, Railway)
+# DB_SSL=true
 ```
 
-> **Atenção:** O arquivo `.env` está no `.gitignore` e nunca deve ser commitado.
+> ⚠️ O `.env` está no `.gitignore` e **nunca deve ser commitado**. Use `.env.example` como referência.
+
+---
+
+## 🚀 Como Executar em Outra Máquina
+
+Escolha a opção que melhor se encaixa no seu ambiente:
+
+---
+
+### ✅ Opção A — Docker (recomendado)
+
+> **Pré-requisitos:** [Docker Desktop](https://docs.docker.com/get-docker/) ou Docker Engine + Docker Compose v2
+
+Vantagem: o PostgreSQL é criado e o schema é aplicado **automaticamente**, sem instalação manual.
+
+```bash
+# 1. Clone o repositório
+git clone git@github.com:Orijnat/Rpg-backend.git
+cd Rpg-backend
+
+# 2. Sobe o PostgreSQL em background
+#    → Cria o banco rpg_ficha, o usuário rpg_user
+#    → Aplica database/schema.sql automaticamente
+docker compose up -d
+
+# 3. Aguarde o banco ficar saudável (≈10–20s)
+docker compose ps
+# O status deve mostrar "healthy" para o serviço postgres
+
+# 4. Instale as dependências Node
+npm install
+
+# 5. Configure o .env
+cp .env.example .env
+# Abra .env e confirme que DATABASE_URL está assim:
+# DATABASE_URL=postgres://rpg_user:rpg_senha_aqui@localhost:5432/rpg_ficha
+
+# 6. Inicie o servidor (com hot-reload)
+npm run dev
+```
+
+**Saída esperada:**
+```
+Conectando ao PostgreSQL...
+✅ Conexão com o PostgreSQL autenticada.
+✅ Modelos Sequelize sincronizados com o banco de dados.
+⚔️  RPG-Backend rodando com sucesso em http://localhost:3333
+📡 Aceitando requisições de: http://localhost:3000
+```
+
+**Verificação:**
+```bash
+curl http://localhost:3333/health
+# Resposta: {"status":"ok","service":"RPG-Backend","timestamp":"..."}
+```
+
+---
+
+### ✅ Opção B — PostgreSQL Instalado Diretamente
+
+> **Pré-requisitos:** PostgreSQL 14+ instalado ([guia oficial](https://www.postgresql.org/download/)) + Node.js 18+
+
+```bash
+# 1. Clone o repositório
+git clone git@github.com:Orijnat/Rpg-backend.git
+cd Rpg-backend
+
+# 2. Crie o banco de dados e o usuário dedicado
+#    (execute como superusuário do Postgres)
+psql -U postgres -f database/setup.sql
+
+# 3. Aplique o schema (tabelas, índices, triggers)
+psql -U rpg_user -d rpg_ficha -f database/schema.sql
+
+# 4. Confirme que as tabelas foram criadas
+psql -U rpg_user -d rpg_ficha -c "\dt"
+#  Deve listar: characters | contracts | inventory_items
+
+# 5. Instale as dependências Node
+npm install
+
+# 6. Configure o .env
+cp .env.example .env
+# Edite DATABASE_URL com o seu usuário e senha:
+# DATABASE_URL=postgres://rpg_user:SUA_SENHA@localhost:5432/rpg_ficha
+
+# 7. Inicie o servidor
+npm run dev
+```
+
+---
+
+### ✅ Opção C — PostgreSQL como serviço em nuvem (Render, Neon, Supabase…)
+
+Caso você tenha um banco PostgreSQL hospedado:
+
+```bash
+# 1. Clone e instale as dependências
+git clone git@github.com:Orijnat/Rpg-backend.git
+cd Rpg-backend
+npm install
+
+# 2. Configure o .env com a connection string do serviço
+cp .env.example .env
+# Exemplo para Neon / Render (sempre usa SSL):
+# DATABASE_URL=postgres://user:pass@ep-xyz.us-east-1.aws.neon.tech/rpg_ficha?sslmode=require
+# DB_SSL=true
+
+# 3. Aplique o schema no banco remoto
+psql "$DATABASE_URL" -f database/schema.sql
+
+# 4. Inicie o servidor
+npm run dev
+```
 
 ---
 
@@ -106,55 +198,156 @@ NODE_ENV=development
 
 ### Tabelas
 
-| Tabela | Descrição |
-|:---|:---|
-| `characters` | Personagens com HP, atributos d20, moedas, cofre bancário e montaria |
-| `inventory_items` | Itens do inventário por personagem (FK + CASCADE DELETE) |
-| `contracts` | Missões/contratos de aventura por personagem (FK + CASCADE DELETE) |
+| Tabela | Colunas principais | Relacionamento |
+|:---|:---|:---|
+| `characters` | `id (UUID PK)`, `name`, `hp`, `hpMax`, `level`, `attributes (JSONB)`, `skills (JSONB)`, `currencies (JSONB)`, `bankSlots (JSONB)`, `bankPassword` | — |
+| `inventory_items` | `id (UUID PK)`, `characterId (FK)`, `name`, `quantity`, `notes` | `→ characters` (CASCADE DELETE) |
+| `contracts` | `id (UUID PK)`, `characterId (FK)`, `title`, `reward`, `done (BOOLEAN)` | `→ characters` (CASCADE DELETE) |
 
-### Principais colunas JSONB
+### Estrutura das colunas JSONB
 
-| Coluna | Formato |
-|:---|:---|
-| `attributes` | `{ "FOR": 14, "DES": 16, "CON": 14, "SAB": 12, "ESP": 14, "CAR": 10, "INT": 10 }` |
-| `skills` | `[{ "name": "Atletismo", "attr": "FOR", "trained": false, "bonus": 0 }]` |
-| `currencies` | `{ "latina": 0, "ouro": 0, "prata": 0, "cobre": 0 }` |
-| `bankSlots` | Array de 80 objetos `{ "item": "" }` |
+```jsonc
+// attributes
+{ "FOR": 14, "DES": 16, "CON": 14, "SAB": 12, "ESP": 14, "CAR": 10, "INT": 10 }
 
-> O Sequelize também executa `sequelize.sync({ alter: true })` na inicialização, o que mantém as tabelas sincronizadas automaticamente com os modelos.
+// skills (array de 19 perícias)
+[
+  { "name": "Atletismo", "attr": "FOR", "trained": false, "bonus": 0 },
+  { "name": "Percepção",  "attr": "ESP", "trained": true,  "bonus": 2 }
+]
+
+// currencies
+{ "latina": 0, "ouro": 150, "prata": 30, "cobre": 0 }
+
+// bankSlots (80 posições)
+[{ "item": "" }, { "item": "Poção de Cura" }, ...]
+```
+
+> O Sequelize executa `sequelize.sync({ alter: true })` a cada inicialização, mantendo as tabelas atualizadas automaticamente caso o modelo mude.
 
 ---
 
 ## 📡 Endpoints da API
 
-| Método | Endpoint | Descrição |
-|:---|:---|:---|
-| `GET` | `/health` | Verificação de integridade da API |
-| `GET` | `/api/characters` | Lista resumo dos personagens |
-| `GET` | `/api/characters/:id` | Personagem completo com inventário e contratos |
-| `POST` | `/api/characters` | Cria novo personagem |
-| `PUT` | `/api/characters/:id` | Atualiza personagem |
-| `POST` | `/api/characters/sync` | **Sincronização da Ficha** (Upsert de estado completo) |
-| `POST` | `/api/characters/:id/bank/verify` | Validação de senha do cofre bancário |
-| `DELETE` | `/api/characters/:id` | Remove personagem e todos os dados associados |
+### `GET /health`
+Verificação de integridade — não requer autenticação.
+```bash
+curl http://localhost:3333/health
+# → { "status": "ok", "service": "RPG-Backend", "timestamp": "..." }
+```
+
+### `GET /api/characters`
+Lista resumo de todos os personagens.
+```bash
+curl http://localhost:3333/api/characters
+# → [{ "id": "uuid", "name": "Herói", "level": 1, "hp": 70, "hpMax": 70, ... }]
+```
+
+### `GET /api/characters/:id`
+Retorna um personagem completo com inventário e contratos.
+```bash
+curl http://localhost:3333/api/characters/SEU-UUID
+```
+
+### `POST /api/characters`
+Cria um novo personagem.
+```bash
+curl -X POST http://localhost:3333/api/characters \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Gandalf", "job": "Mago", "hp": 60, "hpMax": 60 }'
+```
+
+### `PUT /api/characters/:id`
+Atualiza campos de um personagem existente.
+```bash
+curl -X PUT http://localhost:3333/api/characters/SEU-UUID \
+  -H "Content-Type: application/json" \
+  -d '{ "hp": 45, "level": 2 }'
+```
+
+### `POST /api/characters/sync`
+**Endpoint principal usado pelo frontend.** Faz upsert completo da ficha (cria se não existe, atualiza se já existe pelo `id`).
+```bash
+curl -X POST http://localhost:3333/api/characters/sync \
+  -H "Content-Type: application/json" \
+  -d '{ "id": "uuid-ou-vazio", "name": "Herói", "hp": 70, ... }'
+# → { "success": true, "message": "Ficha sincronizada com sucesso.", "character": {...} }
+```
+
+### `POST /api/characters/:id/bank/verify`
+Valida a senha do cofre bancário.
+```bash
+curl -X POST http://localhost:3333/api/characters/SEU-UUID/bank/verify \
+  -H "Content-Type: application/json" \
+  -d '{ "password": "133313" }'
+# → { "valid": true }  ou  { "valid": false }
+```
+
+### `DELETE /api/characters/:id`
+Remove o personagem e todos os dados associados (inventário + contratos em CASCADE).
+```bash
+curl -X DELETE http://localhost:3333/api/characters/SEU-UUID
+```
 
 ---
 
-## 🐳 Comandos Docker úteis
+## 🐳 Comandos Docker Úteis
 
 ```bash
-# Ver logs do banco
+# Ver status dos containers
+docker compose ps
+
+# Acompanhar logs do banco em tempo real
 docker compose logs -f postgres
 
-# Parar sem apagar dados
+# Parar os containers (dados persistem no volume)
 docker compose stop
 
-# Parar e remover containers (dados persistem no volume)
+# Parar e remover containers (dados ainda persistem no volume)
 docker compose down
 
-# Parar e APAGAR todos os dados do banco
+# ⚠️  Parar e APAGAR todos os dados do banco (volume removido)
 docker compose down -v
 
-# Acessar o banco pelo terminal
+# Acessar o banco pelo terminal interativo
 docker exec -it rpg_ficha_db psql -U rpg_user -d rpg_ficha
+
+# Comandos úteis dentro do psql:
+#   \dt              → lista as tabelas
+#   \d characters    → descreve a tabela characters
+#   SELECT * FROM characters;
+#   \q               → sair
 ```
+
+---
+
+## 🔧 Scripts npm
+
+| Comando | Descrição |
+|:---|:---|
+| `npm run dev` | Inicia em modo desenvolvimento com hot-reload (nodemon) |
+| `npm start` | Inicia em modo produção (node puro) |
+
+---
+
+## ❗ Solução de Problemas
+
+**`FATAL: role "rpg_user" does not exist`**
+→ Execute `psql -U postgres -f database/setup.sql` para criar o usuário.
+
+**`ECONNREFUSED` ou `connection refused`**
+→ O PostgreSQL não está rodando. Com Docker: `docker compose up -d`. Nativo: `sudo systemctl start postgresql`.
+
+**`password authentication failed`**
+→ Verifique `DATABASE_URL` no `.env`. A senha deve coincidir com a definida no `setup.sql` ou no `docker-compose.yml`.
+
+**`SSL connection required`**
+→ Adicione `DB_SSL=true` no `.env`. Usado em bancos de nuvem como Render, Neon e Supabase.
+
+**Porta 5432 já em uso**
+→ Algum PostgreSQL local pode estar rodando. Altere a porta no `docker-compose.yml`:
+```yaml
+ports:
+  - "5433:5432"   # usa porta 5433 no host
+```
+E atualize o `.env`: `DATABASE_URL=postgres://...@localhost:5433/rpg_ficha`
