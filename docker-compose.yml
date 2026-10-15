@@ -1,0 +1,38 @@
+version: "3.9"
+
+# =============================================================================
+# RPG-Ficha — Docker Compose
+# Sobe o PostgreSQL localmente para desenvolvimento e testes.
+# =============================================================================
+# Uso:
+#   docker compose up -d          → Sobe o banco em background
+#   docker compose down           → Para e remove os containers
+#   docker compose down -v        → Para e APAGA os dados do volume
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rpg_ficha_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       rpg_ficha
+      POSTGRES_USER:     rpg_user
+      POSTGRES_PASSWORD: rpg_senha_aqui
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volume persistente para os dados do PostgreSQL
+      - rpg_postgres_data:/var/lib/postgresql/data
+      # Aplica o schema automaticamente na primeira inicialização
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rpg_user -d rpg_ficha"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  rpg_postgres_data:
+    name: rpg_ficha_postgres_data
