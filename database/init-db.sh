@@ -2,7 +2,7 @@
 # =============================================================================
 # RPG-Ficha: Script de Inicialização do Banco de Dados
 # Executa setup.sql (criação do usuário rpg_user e banco rpg_ficha)
-# e schema.sql (criação das tabelas, índices e triggers).
+# e banco.sql (criação das tabelas, índices, triggers e migração legada).
 # =============================================================================
 
 set -e
@@ -15,9 +15,9 @@ echo "🏰 Iniciando configuração do PostgreSQL para o RPG-Backend..."
 echo "➡️  Executando setup.sql (usuário rpg_user e banco rpg_ficha)..."
 sudo -u postgres psql < "$DIR/setup.sql"
 
-# 2. Executa o schema com as tabelas, índices e triggers
-echo "➡️  Executando schema.sql (tabelas, índices e triggers)..."
-sudo -u postgres psql -d rpg_ficha < "$DIR/schema.sql"
+# 2. Executa o schema canônico com as tabelas, índices, triggers e migração
+echo "➡️  Executando banco.sql (schema canônico e migração legada)..."
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d rpg_ficha < "$DIR/banco.sql"
 
 # 3. Concede permissões e transfere ownership para o usuário da aplicação rpg_user
 echo "➡️  Garantindo permissões e ownership para rpg_user..."

@@ -20,7 +20,7 @@ Character.belongsTo(User, {
   as: "user",
 });
 
-// Relacionamentos
+// Relacionamentos Personagem <-> Itens de Inventário
 Character.hasMany(InventoryItem, {
   foreignKey: "characterId",
   as: "inventory",
@@ -32,6 +32,7 @@ InventoryItem.belongsTo(Character, {
   as: "character",
 });
 
+// Relacionamentos Personagem <-> Contratos
 Character.hasMany(Contract, {
   foreignKey: "characterId",
   as: "contracts",

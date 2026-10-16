@@ -12,34 +12,53 @@ export const Character = sequelize.define(
     userId: {
       type: DataTypes.UUID,
       allowNull: true,
+      field: "usuario_id",
       references: {
-        model: "users",
+        model: "usuarios",
         key: "id",
       },
       onDelete: "CASCADE",
     },
+    campanhaId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "campanha_id",
+    },
     name: {
-      type: DataTypes.STRING(120),
+      type: DataTypes.STRING(160),
       allowNull: false,
+      field: "nome",
       defaultValue: "Novo Herói",
+    },
+    descricao: {
+      type: DataTypes.TEXT,
+      allowNull: true,
     },
     hp: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      field: "pontos_vida",
       defaultValue: 70,
     },
     hpMax: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      field: "pontos_vida_maximo",
       defaultValue: 70,
     },
     level: {
       type: DataTypes.INTEGER,
+      field: "nivel",
       defaultValue: 1,
     },
     job: {
-      type: DataTypes.STRING(80),
+      type: DataTypes.STRING(100),
+      field: "classe",
       defaultValue: "",
+    },
+    experiencia: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
     },
     forca: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 14 },
     destreza: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 16 },
@@ -49,31 +68,38 @@ export const Character = sequelize.define(
     carisma: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
     inteligencia: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
     age: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING(80),
+      field: "idade",
       defaultValue: "",
     },
     eyes: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING(80),
+      field: "olhos",
       defaultValue: "",
     },
     height: {
-      type: DataTypes.STRING(30),
+      type: DataTypes.STRING(40),
+      field: "altura",
       defaultValue: "",
     },
     skin: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING(80),
+      field: "pele",
       defaultValue: "",
     },
     weight: {
-      type: DataTypes.STRING(30),
+      type: DataTypes.STRING(40),
+      field: "peso",
       defaultValue: "",
     },
     hair: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING(80),
+      field: "cabelo",
       defaultValue: "",
     },
     appearance: {
       type: DataTypes.TEXT,
+      field: "aparencia",
       defaultValue: "",
     },
     attributes: {
@@ -171,9 +197,16 @@ export const Character = sequelize.define(
       type: DataTypes.TEXT,
       defaultValue: "",
     },
+    dadosExtras: {
+      type: DataTypes.JSONB,
+      field: "dados_extras",
+      defaultValue: {},
+    },
   },
   {
-    tableName: "characters",
+    tableName: "personagens",
     timestamps: true,
+    createdAt: "created_at",
+    updatedAt: "updated_at",
   }
 );

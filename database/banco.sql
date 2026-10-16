@@ -1,8 +1,8 @@
 -- =============================================================================
 -- RPG Ficha | Modelo relacional alvo (PostgreSQL 14+)
 -- =============================================================================
--- Este arquivo é uma evolução versionável do schema.sql. Ele NÃO apaga nem
--- renomeia as tabelas legadas users, characters, inventory_items e contracts.
+-- Este arquivo é o schema canônico do sistema. As tabelas legadas em inglês são
+-- migradas, quando possível, e removidas ao final da execução.
 -- Senhas são sempre armazenadas somente como senha_hash.
 --
 -- Aplicação: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/banco.sql
@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   senha_hash text NOT NULL,
   perfil perfil_usuario NOT NULL DEFAULT 'jogador',
   ativo boolean NOT NULL DEFAULT true,
+  dados_mestre jsonb NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}'::jsonb,
   ultimo_login_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -282,7 +283,7 @@ COMMENT ON TABLE personagens IS 'Ficha do jogador, opcionalmente vinculada a uma
 COMMENT ON COLUMN personagens.dados_extras IS 'Extensões flexíveis; dados funcionais permanecem em colunas relacionais.';
 
 -- =============================================================================
--- Compatibilidade e migração (executar após validar os dados legados)
+-- Compatibilidade, migração e remoção das tabelas legadas
 -- =============================================================================
 -- 1. Faça backup. 2. Crie este modelo. 3. Migre em transação, mapeando:
 -- users.id -> usuarios.id; users.password/password_hash -> usuarios.senha_hash;
@@ -296,7 +297,7 @@ BEGIN
     EXECUTE $q$
       INSERT INTO usuarios (id, nome, email, senha_hash, perfil)
       SELECT id, COALESCE(NULLIF(btrim(username), ''), 'Usuário'), lower(email), password,
-             CASE WHEN COALESCE(role, '') IN ('master','mestre')
+             CASE WHEN COALESCE(role::text, '') IN ('master','mestre')
                   THEN 'mestre'::perfil_usuario ELSE 'jogador'::perfil_usuario END
       FROM users WHERE email IS NOT NULL AND password IS NOT NULL
       ON CONFLICT (id) DO NOTHING
@@ -348,10 +349,22 @@ BEGIN
   END IF;
 EXCEPTION WHEN undefined_column THEN
   RAISE NOTICE 'Migração de itens/contratos ignorada: use o mapeamento de colunas documentado.';
+WHEN insufficient_privilege THEN
+  RAISE NOTICE 'Migração de itens/contratos ignorada: o usuário atual não possui permissão de leitura nas tabelas legadas.';
 END $$;
 
 -- bankPassword não é migrada: é um segredo legado em texto puro e deve ser
 -- invalidada/rotacionada fora desta migração. As coleções JSON são preservadas
 -- em personagens.dados_extras para posterior normalização sem perda.
--- Rollback: remova somente os registros novos identificados pelo relatório de
--- migração; não execute DROP/DELETE nas tabelas legadas.
+-- Após a migração, as tabelas legadas não são mais usadas pela aplicação e podem
+-- ser removidas. O CASCADE também remove índices, triggers e FKs pertencentes
+-- exclusivamente a elas.
+DROP TABLE IF EXISTS
+  inventory_items,
+  contracts,
+  characters,
+  users
+CASCADE;
+
+-- bankPassword não é migrada: esse segredo legado deve ser invalidado ou
+-- rotacionado fora desta migração.

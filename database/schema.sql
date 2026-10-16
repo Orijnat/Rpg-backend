@@ -4,7 +4,9 @@
 -- Gerado manualmente a partir dos modelos Sequelize (Rpg-backend)
 -- Versão: 1.0.0
 -- Compatibilidade: PostgreSQL 14+
--- Uso: psql -U <usuario> -d rpg_ficha -f database/schema.sql
+-- LEGADO: o schema canônico atual está em database/banco.sql.
+-- Uso recomendado: psql -U <usuario> -d rpg_ficha -f database/banco.sql
+-- Este arquivo permanece somente para compatibilidade com instalações antigas.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -23,29 +25,27 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 1.5. Tabela: users
 -- Contas de usuários do sistema para autenticação
 -- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS "users" (
-  "id"           UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-  "username"     VARCHAR(50)  NOT NULL UNIQUE,
-  "email"        VARCHAR(120) NOT NULL UNIQUE,
-  "password"     VARCHAR(255) NOT NULL,
-  "role"         VARCHAR(20) NOT NULL DEFAULT 'player' CHECK ("role" IN ('player', 'master')),
-  "perfil"       VARCHAR(20) NOT NULL DEFAULT 'jogador' CHECK ("perfil" IN ('jogador', 'mestre')),
-  "dados_mestre" JSONB        NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}',
-  "createdAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  "updatedAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_role') THEN
+    CREATE TYPE "enum_users_role" AS ENUM ('player', 'master');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_perfil') THEN
+    CREATE TYPE "enum_users_perfil" AS ENUM ('jogador', 'mestre');
+  END IF;
+END $$;
 
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "role" VARCHAR(20) NOT NULL DEFAULT 'player';
-UPDATE "users" SET "role" = 'player' WHERE "role" IS NULL;
-ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'player';
-ALTER TABLE "users" ALTER COLUMN "role" SET NOT NULL;
-ALTER TABLE "users" DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE "users" ADD CONSTRAINT users_role_check CHECK ("role" IN ('player', 'master'));
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "perfil" VARCHAR(20) NOT NULL DEFAULT 'jogador';
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "dados_mestre" JSONB NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}';
-UPDATE "users" SET "perfil" = CASE WHEN "role" = 'master' THEN 'mestre' ELSE 'jogador' END WHERE "perfil" IS NULL OR "perfil" = 'jogador';
-ALTER TABLE "users" DROP CONSTRAINT IF EXISTS users_perfil_check;
-ALTER TABLE "users" ADD CONSTRAINT users_perfil_check CHECK ("perfil" IN ('jogador', 'mestre'));
+CREATE TABLE IF NOT EXISTS "users" (
+  "id"           UUID                NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  "username"     VARCHAR(50)         NOT NULL UNIQUE,
+  "email"        VARCHAR(120)        NOT NULL UNIQUE,
+  "password"     VARCHAR(255)        NOT NULL,
+  "role"         "enum_users_role"   NOT NULL DEFAULT 'player',
+  "perfil"       "enum_users_perfil" NOT NULL DEFAULT 'jogador',
+  "dados_mestre" JSONB               NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}',
+  "createdAt"    TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
+  "updatedAt"    TIMESTAMPTZ         NOT NULL DEFAULT NOW()
+);
 
 -- -----------------------------------------------------------------------------
 -- 2. Tabela: characters

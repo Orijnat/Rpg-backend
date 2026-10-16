@@ -9,8 +9,8 @@
 -- Uso:
 --   psql -U postgres -f database/setup.sql
 --
--- Depois execute o schema:
---   psql -U rpg_user -d rpg_ficha -f database/schema.sql
+-- Depois execute o schema canônico:
+--   psql -U rpg_user -d rpg_ficha -f database/banco.sql
 -- =============================================================================
 
 -- 1. Cria o usuário dedicado (altere a senha!)
@@ -51,10 +51,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO rpg_user;
 
 
 -- =============================================================================
--- Próximo passo: conecte ao banco e aplique o schema:
+-- Próximo passo: conecte ao banco e aplique o schema canônico:
 --   \c rpg_ficha
---   \i database/schema.sql
+--   \i database/banco.sql
 --
 -- Ou em linha de comando:
---   psql -U rpg_user -d rpg_ficha -f database/schema.sql
+--   psql -U rpg_user -d rpg_ficha -f database/banco.sql
 -- =============================================================================

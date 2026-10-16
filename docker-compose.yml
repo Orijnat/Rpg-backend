@@ -24,8 +24,8 @@ services:
     volumes:
       # Volume persistente para os dados do PostgreSQL
       - rpg_postgres_data:/var/lib/postgresql/data
-      # Aplica o schema automaticamente na primeira inicialização
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      # Aplica o schema canônico automaticamente na primeira inicialização
+      - ./database/banco.sql:/docker-entrypoint-initdb.d/01_banco.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rpg_user -d rpg_ficha"]
       interval: 10s

@@ -23,7 +23,8 @@ API REST independente para persistência de dados da **Ficha de RPG Web**, desen
 ```
 Rpg-backend/
 ├── database/
-│   ├── schema.sql             # ← Schema SQL completo (tabelas, índices, triggers)
+│   ├── banco.sql              # ← Schema canônico, índices, triggers e migração legada
+│   ├── schema.sql             # ← Schema legado, não usar em instalações novas
 │   └── setup.sql              # ← Script para criar banco e usuário (rodar 1x como postgres)
 ├── src/
 │   ├── config/
@@ -32,9 +33,9 @@ Rpg-backend/
 │   │   └── characterController.js  # Lógica de todos os endpoints
 │   ├── models/
 │   │   ├── User.js              # Contas e perfis player/master
-│   │   ├── Character.js       # Tabela characters (atributos d20, moedas, cofre, montaria)
-│   │   ├── InventoryItem.js   # Tabela inventory_items (FK → characters)
-│   │   ├── Contract.js        # Tabela contracts (FK → characters)
+│   │   ├── Character.js       # Tabela personagens (atributos d20 e dados da ficha)
+│   │   ├── InventoryItem.js   # Tabela itens_inventario (FK → personagens)
+│   │   ├── Contract.js        # Tabela contratos (FK → personagens)
 │   │   └── index.js           # Relacionamentos e exportações
 │   ├── routes/
 │   │   └── characterRoutes.js # Definição das rotas /api/characters
@@ -116,7 +117,7 @@ cd Rpg-backend
 
 # 2. Sobe o PostgreSQL em background
 #    → Cria o banco rpg_ficha, o usuário rpg_user
-#    → Aplica database/schema.sql automaticamente
+#    → Aplica database/banco.sql automaticamente
 docker compose up -d
 
 # 3. Aguarde o banco ficar saudável (≈10–20s)
@@ -165,12 +166,14 @@ cd Rpg-backend
 #    (execute como superusuário do Postgres)
 psql -U postgres -f database/setup.sql
 
-# 3. Aplique o schema (tabelas, índices, triggers)
-psql -U rpg_user -d rpg_ficha -f database/schema.sql
+# 3. Aplique o schema canônico (tabelas, índices, triggers e migração)
+psql -U rpg_user -d rpg_ficha -f database/banco.sql
 
 # 4. Confirme que as tabelas foram criadas
 psql -U rpg_user -d rpg_ficha -c "\dt"
-#  Deve listar: characters | contracts | inventory_items
+#  Deve listar: usuarios | personagens | contratos | itens_inventario
+#  As tabelas legadas users, characters, inventory_items e contracts são removidas
+#  pelo banco.sql após a migração.
 
 # 5. Instale as dependências Node
 npm install
@@ -202,8 +205,8 @@ cp .env.example .env
 # DATABASE_URL=postgres://user:pass@ep-xyz.us-east-1.aws.neon.tech/rpg_ficha?sslmode=require
 # DB_SSL=true
 
-# 3. Aplique o schema no banco remoto
-psql "$DATABASE_URL" -f database/schema.sql
+# 3. Aplique o schema canônico no banco remoto
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/banco.sql
 
 # 4. Inicie o servidor
 npm run dev
@@ -217,9 +220,9 @@ npm run dev
 
 | Tabela | Colunas principais | Relacionamento |
 |:---|:---|:---|
-| `characters` | `id (UUID PK)`, `name`, `hp`, `hpMax`, `level`, `attributes (JSONB)`, `skills (JSONB)`, `currencies (JSONB)`, `bankSlots (JSONB)`, `bankPassword` | — |
-| `inventory_items` | `id (UUID PK)`, `characterId (FK)`, `name`, `quantity`, `notes` | `→ characters` (CASCADE DELETE) |
-| `contracts` | `id (UUID PK)`, `characterId (FK)`, `title`, `reward`, `done (BOOLEAN)` | `→ characters` (CASCADE DELETE) |
+| `personagens` | `id (UUID PK)`, `nome`, `pontos_vida`, `pontos_vida_maximo`, `nivel`, `dados_extras (JSONB)` | `→ usuarios` (CASCADE DELETE) |
+| `itens_inventario` | `id (UUID PK)`, `personagem_id (FK)`, `nome`, `quantidade`, `descricao` | `→ personagens` (CASCADE DELETE) |
+| `contratos` | `id (UUID PK)`, `personagem_id (FK)`, `titulo`, `recompensa`, `estado` | `→ personagens` (CASCADE DELETE) |
 
 ### Estrutura das colunas JSONB
 
@@ -331,8 +334,8 @@ docker exec -it rpg_ficha_db psql -U rpg_user -d rpg_ficha
 
 # Comandos úteis dentro do psql:
 #   \dt              → lista as tabelas
-#   \d characters    → descreve a tabela characters
-#   SELECT * FROM characters;
+#   \d personagens    → descreve a tabela personagens
+#   SELECT * FROM personagens;
 #   \q               → sair
 ```
 

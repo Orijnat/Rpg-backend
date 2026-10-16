@@ -43,8 +43,8 @@ async function startServer() {
     await sequelize.authenticate();
     console.log("✅ Conexão com o PostgreSQL autenticada.");
 
-    // Sincroniza modelos com o banco (cria tabelas se não existirem)
-    await sequelize.sync({ alter: true });
+    // Cria tabelas ausentes sem alterar o schema versionado em cada inicialização.
+    await sequelize.sync();
     console.log("✅ Modelos Sequelize sincronizados com o banco de dados.");
 
     app.listen(PORT, () => {

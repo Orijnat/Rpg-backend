@@ -12,22 +12,60 @@ export const Contract = sequelize.define(
     characterId: {
       type: DataTypes.UUID,
       allowNull: false,
+      field: "personagem_id",
+      references: {
+        model: "personagens",
+        key: "id",
+      },
+      onDelete: "CASCADE",
+    },
+    campanhaId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "campanha_id",
     },
     title: {
-      type: DataTypes.STRING(200),
+      type: DataTypes.STRING(180),
       allowNull: false,
+      field: "titulo",
+    },
+    descricao: {
+      type: DataTypes.TEXT,
+      allowNull: true,
     },
     reward: {
-      type: DataTypes.STRING(100),
+      type: DataTypes.TEXT,
       defaultValue: "???",
+      field: "recompensa",
+    },
+    estado: {
+      type: DataTypes.ENUM({
+        values: ["rascunho", "ativo", "concluido", "cancelado"],
+        name: "estado_contrato",
+      }),
+      defaultValue: "ativo",
+      field: "estado",
     },
     done: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.getDataValue("estado") === "concluido";
+      },
+      set(val) {
+        this.setDataValue("estado", val ? "concluido" : "ativo");
+      },
     },
   },
   {
-    tableName: "contracts",
+    tableName: "contratos",
     timestamps: true,
+    createdAt: "created_at",
+    updatedAt: "updated_at",
   }
 );
+
+Contract.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  values.done = this.estado === "concluido";
+  return values;
+};
