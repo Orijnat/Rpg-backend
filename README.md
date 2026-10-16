@@ -31,6 +31,7 @@ Rpg-backend/
 │   ├── controllers/
 │   │   └── characterController.js  # Lógica de todos os endpoints
 │   ├── models/
+│   │   ├── User.js              # Contas e perfis player/master
 │   │   ├── Character.js       # Tabela characters (atributos d20, moedas, cofre, montaria)
 │   │   ├── InventoryItem.js   # Tabela inventory_items (FK → characters)
 │   │   ├── Contract.js        # Tabela contracts (FK → characters)
@@ -81,6 +82,22 @@ NODE_ENV=development
 ---
 
 ## 🚀 Como Executar em Outra Máquina
+
+## 👥 Perfis e permissões
+
+Novas contas são criadas como `player`. O perfil `master` deve ser concedido por
+um administrador diretamente no PostgreSQL:
+
+```sql
+UPDATE "users" SET "role" = 'master' WHERE "username" = 'nome-do-mestre';
+```
+
+O backend aplica a separação no banco/API: jogadores só listam e alteram seus
+próprios personagens; mestres podem gerenciar todos os personagens. A coluna
+`bankPassword` nunca é enviada nas respostas da API.
+
+O mapa completo das tabelas, campos e compatibilidade da API está em
+[`docs/modelo-dados.md`](docs/modelo-dados.md).
 
 Escolha a opção que melhor se encaixa no seu ambiente:
 

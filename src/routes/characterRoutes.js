@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { characterController } from "../controllers/characterController.js";
+import { authMiddleware } from "../middlewares/authMiddleware.js";
 
 const router = Router();
+
+router.use(authMiddleware);
 
 router.get("/", characterController.list);
 router.post("/sync", characterController.sync);

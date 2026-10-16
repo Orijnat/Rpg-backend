@@ -1,8 +1,10 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { sequelize, Character, InventoryItem, Contract } from "./models/index.js";
+import { sequelize, User, Character, InventoryItem, Contract } from "./models/index.js";
 import characterRoutes from "./routes/characterRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import campanhaRoutes from "./routes/campanhaRoutes.js";
 
 dotenv.config();
 
@@ -30,7 +32,9 @@ app.get("/health", (req, res) => {
 });
 
 // Rotas Principais
+app.use("/api/auth", authRoutes);
 app.use("/api/characters", characterRoutes);
+app.use("/api/campanha", campanhaRoutes);
 
 // Inicialização e sincronização com PostgreSQL
 async function startServer() {

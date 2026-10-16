@@ -35,13 +35,20 @@ $$;
 SELECT 'CREATE DATABASE rpg_ficha
   WITH OWNER = rpg_user
        ENCODING = ''UTF8''
-       LC_COLLATE = ''pt_BR.UTF-8''
-       LC_CTYPE   = ''pt_BR.UTF-8''
        TEMPLATE   = template0'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'rpg_ficha')\gexec
 
--- 3. Concede privilégios ao usuário no banco
+-- 3. Concede privilégios ao usuário no banco e no schema public
 GRANT ALL PRIVILEGES ON DATABASE rpg_ficha TO rpg_user;
+
+\connect rpg_ficha
+GRANT ALL ON SCHEMA public TO rpg_user;
+ALTER SCHEMA public OWNER TO rpg_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rpg_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rpg_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO rpg_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO rpg_user;
+
 
 -- =============================================================================
 -- Próximo passo: conecte ao banco e aplique o schema:

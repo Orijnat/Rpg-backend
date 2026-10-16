@@ -20,15 +20,51 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- -----------------------------------------------------------------------------
+-- 1.5. Tabela: users
+-- Contas de usuários do sistema para autenticação
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "users" (
+  "id"           UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  "username"     VARCHAR(50)  NOT NULL UNIQUE,
+  "email"        VARCHAR(120) NOT NULL UNIQUE,
+  "password"     VARCHAR(255) NOT NULL,
+  "role"         VARCHAR(20) NOT NULL DEFAULT 'player' CHECK ("role" IN ('player', 'master')),
+  "perfil"       VARCHAR(20) NOT NULL DEFAULT 'jogador' CHECK ("perfil" IN ('jogador', 'mestre')),
+  "dados_mestre" JSONB        NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}',
+  "createdAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  "updatedAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "role" VARCHAR(20) NOT NULL DEFAULT 'player';
+UPDATE "users" SET "role" = 'player' WHERE "role" IS NULL;
+ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'player';
+ALTER TABLE "users" ALTER COLUMN "role" SET NOT NULL;
+ALTER TABLE "users" DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE "users" ADD CONSTRAINT users_role_check CHECK ("role" IN ('player', 'master'));
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "perfil" VARCHAR(20) NOT NULL DEFAULT 'jogador';
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "dados_mestre" JSONB NOT NULL DEFAULT '{"tituloSessao":"Próxima sessão","anotacoesSessao":"","npcs":[],"iniciativa":[],"imagensMapas":[]}';
+UPDATE "users" SET "perfil" = CASE WHEN "role" = 'master' THEN 'mestre' ELSE 'jogador' END WHERE "perfil" IS NULL OR "perfil" = 'jogador';
+ALTER TABLE "users" DROP CONSTRAINT IF EXISTS users_perfil_check;
+ALTER TABLE "users" ADD CONSTRAINT users_perfil_check CHECK ("perfil" IN ('jogador', 'mestre'));
+
+-- -----------------------------------------------------------------------------
 -- 2. Tabela: characters
 -- Personagens com atributos d20, moedas, cofre bancário, montaria e anotações.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS "characters" (
   -- Identificação
   "id"           UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  "userId"       UUID         REFERENCES "users"("id") ON DELETE CASCADE,
   "name"         VARCHAR(120) NOT NULL DEFAULT 'Novo Herói',
   "job"          VARCHAR(80)  NOT NULL DEFAULT '',
   "level"        INTEGER      NOT NULL DEFAULT 1,
+  "forca"        INTEGER      NOT NULL DEFAULT 14,
+  "destreza"     INTEGER      NOT NULL DEFAULT 16,
+  "constituicao" INTEGER      NOT NULL DEFAULT 14,
+  "sabedoria"    INTEGER      NOT NULL DEFAULT 12,
+  "espirito"     INTEGER      NOT NULL DEFAULT 14,
+  "carisma"      INTEGER      NOT NULL DEFAULT 10,
+  "inteligencia" INTEGER      NOT NULL DEFAULT 10,
 
   -- Pontos de Vida
   "hp"           INTEGER      NOT NULL DEFAULT 70,
@@ -50,9 +86,15 @@ CREATE TABLE IF NOT EXISTS "characters" (
   -- Perícias (JSONB: array de objetos { name, attr, trained, bonus })
   -- Exemplo: [{"name":"Atletismo","attr":"FOR","trained":false,"bonus":0}]
   "skills"       JSONB        NOT NULL DEFAULT '[]',
+  "pericias"     JSONB        NOT NULL DEFAULT '[]',
 
   -- Moedas (JSONB: { latina, ouro, prata, cobre })
   "currencies"   JSONB        NOT NULL DEFAULT '{"latina":0,"ouro":0,"prata":0,"cobre":0}',
+  "moedas"       JSONB        NOT NULL DEFAULT '{"latina":0,"ouro":0,"prata":0,"cobre":0}',
+  "itens_inventario" JSONB    NOT NULL DEFAULT '[]',
+  "contratos_dados" JSONB     NOT NULL DEFAULT '[]',
+  "jogadores"    JSONB        NOT NULL DEFAULT '[]',
+  "npcs"         JSONB        NOT NULL DEFAULT '[]',
 
   -- Cofre bancário (JSONB: array de 80 slots { item: "" })
   "bankSlots"    JSONB        NOT NULL DEFAULT '[]',
@@ -60,6 +102,7 @@ CREATE TABLE IF NOT EXISTS "characters" (
 
   -- Anotações gerais e do quarto
   "notes"        TEXT         NOT NULL DEFAULT '',
+  "imagens_anotacoes" JSONB   NOT NULL DEFAULT '[]',
   "roomNotes"    TEXT         NOT NULL DEFAULT '',
 
   -- Montaria
@@ -72,6 +115,23 @@ CREATE TABLE IF NOT EXISTS "characters" (
   "createdAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   "updatedAt"    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- Garante existência da coluna userId caso a tabela já tenha sido criada anteriormente
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "userId" UUID REFERENCES "users"("id") ON DELETE CASCADE;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "forca" INTEGER NOT NULL DEFAULT 14;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "destreza" INTEGER NOT NULL DEFAULT 16;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "constituicao" INTEGER NOT NULL DEFAULT 14;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "sabedoria" INTEGER NOT NULL DEFAULT 12;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "espirito" INTEGER NOT NULL DEFAULT 14;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "carisma" INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "inteligencia" INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "pericias" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "moedas" JSONB NOT NULL DEFAULT '{"latina":0,"ouro":0,"prata":0,"cobre":0}';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "itens_inventario" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "contratos_dados" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "jogadores" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "npcs" JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE "characters" ADD COLUMN IF NOT EXISTS "imagens_anotacoes" JSONB NOT NULL DEFAULT '[]';
 
 -- Índice para buscas frequentes por nome
 CREATE INDEX IF NOT EXISTS idx_characters_name
@@ -149,7 +209,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Aplicar trigger nas três tabelas
+-- Aplicar trigger nas tabelas
+CREATE OR REPLACE TRIGGER set_updated_at_users
+  BEFORE UPDATE ON "users"
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
 CREATE OR REPLACE TRIGGER set_updated_at_characters
   BEFORE UPDATE ON "characters"
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
@@ -161,6 +225,10 @@ CREATE OR REPLACE TRIGGER set_updated_at_inventory_items
 CREATE OR REPLACE TRIGGER set_updated_at_contracts
   BEFORE UPDATE ON "contracts"
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- Conceder permissões para o usuário da aplicação
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rpg_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rpg_user;
 
 -- -----------------------------------------------------------------------------
 -- 6. Dados iniciais de exemplo (seed opcional)

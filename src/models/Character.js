@@ -9,6 +9,15 @@ export const Character = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: "users",
+        key: "id",
+      },
+      onDelete: "CASCADE",
+    },
     name: {
       type: DataTypes.STRING(120),
       allowNull: false,
@@ -32,6 +41,13 @@ export const Character = sequelize.define(
       type: DataTypes.STRING(80),
       defaultValue: "",
     },
+    forca: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 14 },
+    destreza: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 16 },
+    constituicao: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 14 },
+    sabedoria: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 12 },
+    espirito: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 14 },
+    carisma: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
+    inteligencia: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
     age: {
       type: DataTypes.STRING(20),
       defaultValue: "",
@@ -76,6 +92,11 @@ export const Character = sequelize.define(
       type: DataTypes.JSONB,
       defaultValue: [],
     },
+    pericias: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+    },
     currencies: {
       type: DataTypes.JSONB,
       defaultValue: {
@@ -84,6 +105,33 @@ export const Character = sequelize.define(
         prata: 0,
         cobre: 0,
       },
+    },
+    moedas: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: { latina: 0, ouro: 0, prata: 0, cobre: 0 },
+    },
+    itensInventario: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      field: "itens_inventario",
+      defaultValue: [],
+    },
+    contratosDados: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      field: "contratos_dados",
+      defaultValue: [],
+    },
+    jogadores: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+    },
+    npcs: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
     },
     bankSlots: {
       type: DataTypes.JSONB,
@@ -96,6 +144,12 @@ export const Character = sequelize.define(
     notes: {
       type: DataTypes.TEXT,
       defaultValue: "",
+    },
+    imagensAnotacoes: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      field: "imagens_anotacoes",
+      defaultValue: [],
     },
     roomNotes: {
       type: DataTypes.TEXT,
