@@ -1,5 +1,6 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/database.js";
+import bcrypt from "bcryptjs";
 
 export const Character = sequelize.define(
   "Character",
@@ -208,5 +209,18 @@ export const Character = sequelize.define(
     timestamps: true,
     createdAt: "created_at",
     updatedAt: "updated_at",
+    hooks: {
+      beforeCreate: async (character) => {
+        if (character.bankPassword && !String(character.bankPassword).startsWith("$2")) {
+          character.bankPassword = await bcrypt.hash(String(character.bankPassword), 10);
+        }
+      },
+      beforeUpdate: async (character) => {
+        if (character.changed("bankPassword") && character.bankPassword &&
+            !String(character.bankPassword).startsWith("$2")) {
+          character.bankPassword = await bcrypt.hash(String(character.bankPassword), 10);
+        }
+      },
+    },
   }
 );

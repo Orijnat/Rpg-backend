@@ -2,7 +2,12 @@ import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
 import { User, Character } from "../models/index.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "super_secret_rpg_ficha_key_2026_dev";
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET não configurado.");
+  }
+  return process.env.JWT_SECRET;
+}
 
 function perfilDoUsuario(usuario) {
   return usuario.perfil === "mestre" || usuario.role === "master" ? "mestre" : "jogador";
@@ -15,6 +20,27 @@ function usuarioParaResposta(usuario) {
   return dados;
 }
 
+function personagemParaResposta(personagem) {
+  const dados = personagem.toJSON ? personagem.toJSON() : { ...personagem };
+  delete dados.bankPassword;
+  return dados;
+}
+
+function tokenParaUsuario(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      perfil: perfilDoUsuario(user),
+      sessionId: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    },
+    getJwtSecret(),
+    { expiresIn: "7d" },
+  );
+}
+
 export const authController = {
   // Registro de novo usuário + criação imediata do primeiro personagem
   async register(req, res) {
@@ -25,6 +51,7 @@ export const authController = {
         password,
         characterName,
         characterJob,
+        customClass,
       } = req.body;
 
       if (!username || !email || !password) {
@@ -36,9 +63,11 @@ export const authController = {
       }
 
       // Verifica se username ou e-mail já estão cadastrados
+      const normalizedUsername = String(username).trim();
+      const normalizedEmail = String(email).trim().toLowerCase();
       const existingUser = await User.findOne({
         where: {
-          [Op.or]: [{ username }, { email }],
+          [Op.or]: [{ username: normalizedUsername }, { email: normalizedEmail }],
         },
       });
 
@@ -51,35 +80,43 @@ export const authController = {
 
       // Criação do usuário
       const user = await User.create({
-        username: username.trim(),
-        email: email.trim().toLowerCase(),
+        username: normalizedUsername,
+        email: normalizedEmail,
         password,
         perfil: "jogador",
-        role: "player",
       });
 
-      // Criação do personagem inicial vinculado ao usuário
+      // O cadastro público nunca recebe perfil/role do cliente.
       const character = await Character.create({
         userId: user.id,
-        name: characterName && characterName.trim() ? characterName.trim() : "Novo Herói",
-        job: characterJob && characterJob.trim() ? characterJob.trim() : "Aventureiro",
+        name: characterName && String(characterName).trim() ? String(characterName).trim() : "Novo Herói",
+        job: characterJob && String(characterJob).trim() ? String(characterJob).trim() : "Aventureiro",
+        dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
         hp: 70,
         hpMax: 70,
         level: 1,
       });
 
       // Geração do token JWT (válido por 7 dias)
+      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role, perfil: perfilDoUsuario(user) },
-        JWT_SECRET,
+        {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          perfil: perfilDoUsuario(user),
+          sessionId,
+        },
+        getJwtSecret(),
         { expiresIn: "7d" }
       );
 
       return res.status(201).json({
         message: "Usuário e personagem criados com sucesso!",
         user: usuarioParaResposta(user),
-        character,
-        characters: [character],
+        character: personagemParaResposta(character),
+        characters: [personagemParaResposta(character)],
         token,
       });
     } catch (error) {
@@ -118,19 +155,29 @@ export const authController = {
       // Busca todos os personagens deste usuário
       const characters = await Character.findAll({
         where: { userId: user.id },
-        order: [["updatedAt", "DESC"]],
+        order: [["updated_at", "DESC"]],
       });
 
+      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role, perfil: perfilDoUsuario(user) },
-        JWT_SECRET,
+        {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          perfil: perfilDoUsuario(user),
+          sessionId,
+        },
+        getJwtSecret(),
         { expiresIn: "7d" }
       );
 
       return res.json({
         message: "Login realizado com sucesso!",
         user: usuarioParaResposta(user),
-        characters,
+        characters: characters.map((character) => {
+          return personagemParaResposta(character);
+        }),
         token,
       });
     } catch (error) {
@@ -144,16 +191,99 @@ export const authController = {
     try {
       const characters = await Character.findAll({
         where: { userId: req.user.id },
-        order: [["updatedAt", "DESC"]],
+        order: [["updated_at", "DESC"]],
       });
 
       return res.json({
         user: usuarioParaResposta(req.user),
-        characters,
+        characters: characters.map(personagemParaResposta),
+        session: {
+          sessionId: req.tokenPayload?.sessionId || null,
+          issuedAt: req.tokenPayload?.iat ? new Date(req.tokenPayload.iat * 1000).toISOString() : null,
+          expiresAt: req.tokenPayload?.exp ? new Date(req.tokenPayload.exp * 1000).toISOString() : null,
+          role: req.user.role,
+          perfil: perfilDoUsuario(req.user),
+        },
       });
     } catch (error) {
       console.error("Erro ao obter dados do usuário:", error);
       return res.status(500).json({ error: "Erro ao obter perfil." });
+    }
+  },
+
+  // Atualização de perfil do usuário (nome, e-mail, perfil/role) com emissão de novo JWT
+  async updateProfile(req, res) {
+    try {
+      const { username, email, perfil, role } = req.body;
+      const user = req.user;
+
+      if (username && username.trim()) {
+        user.username = username.trim();
+      }
+
+      if (email && email.trim()) {
+        const nextEmail = email.trim().toLowerCase();
+        if (nextEmail !== user.email) {
+          const existing = await User.findOne({ where: { email: nextEmail } });
+          if (existing && existing.id !== user.id) {
+            return res.status(409).json({ error: "Este e-mail já está sendo utilizado por outra conta." });
+          }
+          user.email = nextEmail;
+        }
+      }
+
+      // Perfil é uma atribuição administrativa; o cliente não pode se promover.
+      const targetPerfil = perfil || (role === "master" ? "mestre" : role === "player" ? "jogador" : null);
+      if (targetPerfil && targetPerfil !== perfilDoUsuario(user)) {
+        return res.status(403).json({ error: "O perfil só pode ser alterado por um administrador." });
+      }
+      if (targetPerfil && (targetPerfil === "mestre" || targetPerfil === "jogador")) {
+        user.perfil = targetPerfil;
+      }
+
+      await user.save();
+
+      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const token = jwt.sign(
+        {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          perfil: perfilDoUsuario(user),
+          sessionId,
+        },
+        getJwtSecret(),
+        { expiresIn: "7d" }
+      );
+
+      return res.json({
+        message: "Perfil atualizado com sucesso!",
+        user: usuarioParaResposta(user),
+        token,
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar perfil:", error);
+      return res.status(500).json({ error: error.message || "Erro ao atualizar perfil." });
+    }
+  },
+
+  // Encerramento de sessão
+  async logout(req, res) {
+    try {
+      if (req.user) {
+        user_logout: {
+          req.user.ultimoLoginAt = new Date();
+          await req.user.save();
+        }
+      }
+      return res.json({
+        message: "Sessão encerrada com sucesso.",
+        revoked: true,
+      });
+    } catch (error) {
+      console.error("Erro ao encerrar sessão:", error);
+      return res.status(500).json({ error: "Erro ao encerrar sessão." });
     }
   },
 };

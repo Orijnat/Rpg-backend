@@ -63,7 +63,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
   CONSTRAINT usuarios_nome_nao_vazio CHECK (length(btrim(nome)) > 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_unico ON usuarios (email);
-
 CREATE TABLE IF NOT EXISTS campanhas (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   proprietario_id uuid NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
@@ -71,6 +70,7 @@ CREATE TABLE IF NOT EXISTS campanhas (
   descricao text,
   estado estado_campanha NOT NULL DEFAULT 'planejamento',
   codigo_convite varchar(32),
+  dados_extras jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT campanhas_nome_nao_vazio CHECK (length(btrim(nome)) > 0)
@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS membros_campanha (
   campanha_id uuid NOT NULL REFERENCES campanhas(id) ON DELETE CASCADE,
   usuario_id uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   papel papel_membro NOT NULL DEFAULT 'jogador',
+  bloqueado boolean NOT NULL DEFAULT false,
   entrou_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (campanha_id, usuario_id)
 );
@@ -252,6 +253,26 @@ CREATE TABLE IF NOT EXISTS sessoes_autenticacao (
 CREATE UNIQUE INDEX IF NOT EXISTS sessoes_token_hash_unico ON sessoes_autenticacao (token_hash);
 CREATE INDEX IF NOT EXISTS sessoes_usuario_idx ON sessoes_autenticacao (usuario_id, expira_at);
 
+-- Sessões de jogo da campanha. A tabela acima é exclusivamente de autenticação.
+CREATE TABLE IF NOT EXISTS sessoes_jogo (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campanha_id uuid NOT NULL REFERENCES campanhas(id) ON DELETE CASCADE,
+  criado_por_id uuid NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+  titulo varchar(200) NOT NULL,
+  numero integer NOT NULL DEFAULT 1 CHECK (numero > 0),
+  estado varchar(30) NOT NULL DEFAULT 'planejada'
+    CHECK (estado IN ('planejada', 'em_andamento', 'concluida', 'cancelada')),
+  data_agendada timestamptz,
+  resumo text NOT NULL DEFAULT '',
+  dados_extras jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sessoes_jogo_titulo_nao_vazio CHECK (length(btrim(titulo)) > 0),
+  CONSTRAINT sessoes_jogo_campanha_numero_unico UNIQUE (campanha_id, numero)
+);
+CREATE INDEX IF NOT EXISTS sessoes_jogo_campanha_idx
+  ON sessoes_jogo (campanha_id, numero);
+
 CREATE TABLE IF NOT EXISTS auditoria (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), usuario_id uuid REFERENCES usuarios(id) ON DELETE SET NULL,
   campanha_id uuid REFERENCES campanhas(id) ON DELETE SET NULL, acao varchar(80) NOT NULL,
@@ -268,7 +289,7 @@ BEGIN
   FOREACH tabela IN ARRAY ARRAY[
     'usuarios','campanhas','personagens','atributos_personagem','pericias_personagem',
     'itens_inventario','contratos','anotacoes','imagens','cofres','montarias','npcs',
-    'encontros','recursos_campanha'
+    'encontros','recursos_campanha','sessoes_jogo'
   ] LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', 'tr_' || tabela || '_updated_at', tabela);
     EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()',

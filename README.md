@@ -14,6 +14,7 @@ API REST independente para persistência de dados da **Ficha de RPG Web**, desen
 | PostgreSQL | 14+ | Banco de dados principal |
 | pg / pg-hstore | 8.x | Driver nativo PostgreSQL |
 | dotenv | 16.x | Variáveis de ambiente |
+| helmet / express-rate-limit | atual | Headers defensivos e limites por IP |
 | nodemon | 3.x | Hot-reload em desenvolvimento |
 
 ---
@@ -39,7 +40,7 @@ Rpg-backend/
 │   │   └── index.js           # Relacionamentos e exportações
 │   ├── routes/
 │   │   └── characterRoutes.js # Definição das rotas /api/characters
-│   └── server.js              # Bootstrap do Express + sequelize.sync()
+│   └── server.js              # Bootstrap do Express (schema via migrations)
 ├── docker-compose.yml         # PostgreSQL local via Docker (recomendado)
 ├── .env.example               # Modelo das variáveis de ambiente
 ├── .env                       # Suas credenciais locais (NÃO commitado)
@@ -70,6 +71,7 @@ DATABASE_URL=postgres://rpg_user:rpg_senha_aqui@localhost:5432/rpg_ficha
 
 # Origem permitida pelo CORS (endereço do frontend Next.js)
 CORS_ORIGIN=http://localhost:3000
+FRONTEND_URL=http://localhost:3000
 
 # Ambiente: development | production
 NODE_ENV=development
@@ -79,6 +81,15 @@ NODE_ENV=development
 ```
 
 > ⚠️ O `.env` está no `.gitignore` e **nunca deve ser commitado**. Use `.env.example` como referência.
+
+### Hardening HTTP
+
+O backend aceita somente as origens listadas em `FRONTEND_URL` e `CORS_ORIGIN`
+(separadas por vírgula); wildcard (`*`) não é permitido. Todas as respostas
+recebem headers defensivos do Helmet, o JSON é limitado a 2 MB, e há limites
+de 100 requisições/minuto por IP (geral) e 5 requisições/minuto no grupo de
+autenticação. O health check sem dependência do PostgreSQL está em
+`GET /api/health`; `GET /health/ready` continua verificando o banco.
 
 ---
 
@@ -243,7 +254,19 @@ npm run dev
 [{ "item": "" }, { "item": "Poção de Cura" }, ...]
 ```
 
-> O Sequelize executa `sequelize.sync({ alter: true })` a cada inicialização, mantendo as tabelas atualizadas automaticamente caso o modelo mude.
+> O servidor não executa `sequelize.sync()` nem altera o schema automaticamente.
+> Aplique alterações com `npm run db:migrate` antes de iniciar a API. A migration
+> inicial usa `database/banco.sql` como baseline versionado; faça backup antes
+> de aplicá-la em um banco legado.
+
+### Migrations
+
+```bash
+npm run db:migrate
+```
+
+O comando registra cada versão na tabela `SequelizeMeta`. O servidor apenas
+autentica a conexão; ele não cria nem altera tabelas em runtime.
 
 ---
 
@@ -255,6 +278,11 @@ Verificação de integridade — não requer autenticação.
 curl http://localhost:3333/health
 # → { "status": "ok", "service": "RPG-Backend", "timestamp": "..." }
 ```
+
+### `GET /health/live` e `GET /health/ready`
+
+`/health/live` verifica apenas o processo. `/health/ready` verifica também a
+conexão PostgreSQL e retorna `503` quando o banco não está disponível.
 
 ### `GET /api/characters`
 Lista resumo de todos os personagens.
