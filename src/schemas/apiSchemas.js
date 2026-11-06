@@ -12,6 +12,10 @@ export const registroSchema = z.object({
   characterName: texto(160).max(160).optional(),
   characterJob: texto(100).max(100).optional(),
   customClass: texto(100).max(100).optional(),
+  perfil: z.enum(["jogador", "mestre"]).optional(),
+  role: z.enum(["player", "master"]).optional(),
+  inviteCode: texto(40).optional(),
+  codigoConvite: texto(40).optional(),
 }).strict();
 
 export const loginSchema = z.object({

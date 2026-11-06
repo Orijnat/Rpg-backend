@@ -240,6 +240,46 @@ export const campanhaController = {
     }
   },
 
+  // Consulta pública de informações do convite (sem requerer autenticação prévia)
+  async consultarConvitePublico(req, res) {
+    try {
+      const { codigo } = req.params;
+      if (!codigo || !codigo.trim()) {
+        return res.status(400).json({ valido: false, error: "Código de convite não informado." });
+      }
+
+      const campanha = await Campaign.findOne({
+        where: { codigoConvite: codigo.trim().toUpperCase() },
+        include: [
+          { model: User, as: "proprietario", attributes: ["id", "username"] },
+        ],
+      });
+
+      if (!campanha) {
+        return res.status(404).json({ valido: false, error: "Nenhuma mesa de RPG encontrada com este código de convite." });
+      }
+
+      if (campanha.estado === "encerrada" || campanha.estado === "arquivada") {
+        return res.status(400).json({ valido: false, error: "Esta mesa de RPG já foi encerrada pelo mestre." });
+      }
+
+      return res.json({
+        valido: true,
+        campanha: {
+          id: campanha.id,
+          nome: campanha.nome,
+          descricao: campanha.descricao,
+          estado: campanha.estado,
+          mestre: campanha.proprietario?.username || "Mestre Anônimo",
+          codigoConvite: campanha.codigoConvite,
+        },
+      });
+    } catch (error) {
+      console.error("Erro ao consultar convite público:", error);
+      return res.status(500).json({ valido: false, error: "Erro ao verificar código de convite." });
+    }
+  },
+
   // Jogador ingressa na campanha através do código de convite
   async entrarPorCodigo(req, res) {
     try {
@@ -256,7 +296,7 @@ export const campanhaController = {
         return res.status(404).json({ error: "Nenhuma campanha encontrada com este código." });
       }
 
-      if (campanha.estado === "encerrada") {
+      if (campanha.estado === "encerrada" || campanha.estado === "arquivada") {
         return res.status(400).json({ error: "Esta campanha já foi encerrada." });
       }
 
@@ -268,6 +308,11 @@ export const campanhaController = {
         if (membroExistente.bloqueado) {
           return res.status(403).json({ error: "Seu acesso a esta campanha foi bloqueado pelo mestre." });
         }
+        // Garante que o personagem ativo esteja vinculado à mesa
+        const char = await Character.findOne({ where: { userId: req.user.id } });
+        if (char && !char.campanhaId) {
+          await char.update({ campanhaId: campanha.id });
+        }
         return res.json({ message: "Você já é membro desta campanha.", campanha });
       }
 
@@ -276,6 +321,12 @@ export const campanhaController = {
         usuarioId: req.user.id,
         papel: "jogador",
       });
+
+      // Vincula o personagem do jogador à campanha se ele ainda não estiver vinculado
+      const char = await Character.findOne({ where: { userId: req.user.id } });
+      if (char && !char.campanhaId) {
+        await char.update({ campanhaId: campanha.id });
+      }
 
       await registrarAuditoria({
         usuarioId: req.user.id,

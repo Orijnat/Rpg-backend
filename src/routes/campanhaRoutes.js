@@ -10,6 +10,10 @@ import { validar } from "../middlewares/validate.js";
 import { sessaoController } from "../controllers/sessaoController.js";
 
 const router = Router();
+
+// Rota pública para visualização/validação prévia de convite (sem exigir login)
+router.get("/convite/:codigo", campanhaController.consultarConvitePublico);
+
 router.use(authMiddleware);
 
 // Compatibilidade legada com /api/campanha

@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
-import { User, Character } from "../models/index.js";
+import { User, Character, Campaign, CampaignMember, registrarAuditoria } from "../models/index.js";
 
 function getJwtSecret() {
   if (!process.env.JWT_SECRET) {
@@ -52,6 +52,10 @@ export const authController = {
         characterName,
         characterJob,
         customClass,
+        perfil,
+        role,
+        inviteCode,
+        codigoConvite,
       } = req.body;
 
       if (!username || !email || !password) {
@@ -60,6 +64,23 @@ export const authController = {
 
       if (password.length < 6) {
         return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
+      }
+
+      // Validação de convite da mesa (se fornecido)
+      const rawCode = (inviteCode || codigoConvite || "").trim().toUpperCase();
+      let targetCampaign = null;
+      if (rawCode) {
+        targetCampaign = await Campaign.findOne({
+          where: { codigoConvite: rawCode },
+        });
+
+        if (!targetCampaign) {
+          return res.status(404).json({ error: "Nenhuma mesa de RPG encontrada com este código de convite." });
+        }
+
+        if (targetCampaign.estado === "encerrada" || targetCampaign.estado === "arquivada") {
+          return res.status(400).json({ error: "Esta mesa de RPG já foi encerrada pelo mestre." });
+        }
       }
 
       // Verifica se username ou e-mail já estão cadastrados
@@ -78,17 +99,22 @@ export const authController = {
         return res.status(409).json({ error: "Este e-mail já está cadastrado." });
       }
 
+      const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
+      const selectedRole = selectedPerfil === "mestre" ? "master" : "player";
+
       // Criação do usuário
       const user = await User.create({
         username: normalizedUsername,
         email: normalizedEmail,
         password,
-        perfil: "jogador",
+        perfil: selectedPerfil,
+        role: selectedRole,
       });
 
-      // O cadastro público nunca recebe perfil/role do cliente.
+      // Criação do herói associado à campanha (se convite fornecido)
       const character = await Character.create({
         userId: user.id,
+        campanhaId: targetCampaign ? targetCampaign.id : null,
         name: characterName && String(characterName).trim() ? String(characterName).trim() : "Novo Herói",
         job: characterJob && String(characterJob).trim() ? String(characterJob).trim() : "Aventureiro",
         dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
@@ -96,6 +122,30 @@ export const authController = {
         hpMax: 70,
         level: 1,
       });
+
+      // Se ingressou via convite, registra como membro da campanha
+      if (targetCampaign) {
+        await CampaignMember.create({
+          campanhaId: targetCampaign.id,
+          usuarioId: user.id,
+          papel: "jogador",
+        });
+
+        await registrarAuditoria({
+          usuarioId: user.id,
+          campanhaId: targetCampaign.id,
+          acao: "ENTRADA_MEMBRO_CADASTRO",
+          entidade: "membros_campanha",
+          entidadeId: user.id,
+          dados: {
+            nome: user.username,
+            personagemId: character.id,
+            nomePersonagem: character.name,
+            viaConvite: rawCode,
+          },
+          ip: req.ip,
+        });
+      }
 
       // Geração do token JWT (válido por 7 dias)
       const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -113,10 +163,13 @@ export const authController = {
       );
 
       return res.status(201).json({
-        message: "Usuário e personagem criados com sucesso!",
+        message: targetCampaign
+          ? `Conta criada e vinculada com sucesso à mesa "${targetCampaign.nome}"!`
+          : "Usuário e personagem criados com sucesso!",
         user: usuarioParaResposta(user),
         character: personagemParaResposta(character),
         characters: [personagemParaResposta(character)],
+        campaign: targetCampaign ? targetCampaign.toJSON() : null,
         token,
       });
     } catch (error) {

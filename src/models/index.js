@@ -1,6 +1,7 @@
 import { sequelize } from "../config/database.js";
 import { User } from "./User.js";
 import { Character } from "./Character.js";
+import { AtributosPersonagem } from "./AtributosPersonagem.js";
 import { InventoryItem } from "./InventoryItem.js";
 import { Contract } from "./Contract.js";
 import { Campaign } from "./Campaign.js";
@@ -25,6 +26,17 @@ User.hasMany(Character, {
 Character.belongsTo(User, {
   foreignKey: "userId",
   as: "user",
+});
+
+// Personagem <-> Atributos (1:1)
+Character.hasOne(AtributosPersonagem, {
+  foreignKey: "personagemId",
+  as: "atributos",
+  onDelete: "CASCADE",
+});
+AtributosPersonagem.belongsTo(Character, {
+  foreignKey: "personagemId",
+  as: "personagem",
 });
 
 // Relacionamentos Personagem <-> Itens de Inventário
@@ -185,6 +197,7 @@ export {
   sequelize,
   User,
   Character,
+  AtributosPersonagem,
   InventoryItem,
   Contract,
   Campaign,
