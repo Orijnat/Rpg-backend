@@ -308,11 +308,11 @@ export const campanhaController = {
         if (membroExistente.bloqueado) {
           return res.status(403).json({ error: "Seu acesso a esta campanha foi bloqueado pelo mestre." });
         }
-        // Garante que o personagem ativo esteja vinculado à mesa
-        const char = await Character.findOne({ where: { userId: req.user.id } });
-        if (char && !char.campanhaId) {
-          await char.update({ campanhaId: campanha.id });
-        }
+        // Garante que os personagens do jogador estejam vinculados à mesa
+        await Character.update(
+          { campanhaId: campanha.id },
+          { where: { userId: req.user.id } }
+        );
         return res.json({ message: "Você já é membro desta campanha.", campanha });
       }
 
@@ -322,10 +322,23 @@ export const campanhaController = {
         papel: "jogador",
       });
 
-      // Vincula o personagem do jogador à campanha se ele ainda não estiver vinculado
-      const char = await Character.findOne({ where: { userId: req.user.id } });
-      if (char && !char.campanhaId) {
-        await char.update({ campanhaId: campanha.id });
+      // Vincula o personagem do jogador à campanha ou cria se não existir nenhum
+      const chars = await Character.findAll({ where: { userId: req.user.id } });
+      if (chars.length === 0) {
+        await Character.create({
+          userId: req.user.id,
+          campanhaId: campanha.id,
+          name: req.user.username || "Novo Herói",
+          job: "Aventureiro",
+          hp: 70,
+          hpMax: 70,
+          level: 1,
+        });
+      } else {
+        await Character.update(
+          { campanhaId: campanha.id },
+          { where: { userId: req.user.id } }
+        );
       }
 
       await registrarAuditoria({
@@ -359,7 +372,20 @@ export const campanhaController = {
       }
       const membros = await CampaignMember.findAll({
         where: { campanhaId: id },
-        include: [{ model: User, as: "usuario", attributes: ["id", "username", "email"] }],
+        include: [
+          {
+            model: User,
+            as: "usuario",
+            attributes: ["id", "username", "email"],
+            include: [
+              {
+                model: Character,
+                as: "characters",
+                attributes: ["id", "name", "job", "level", "hp", "hpMax", "campanhaId"],
+              },
+            ],
+          },
+        ],
       });
       return res.json(membros);
     } catch (error) {
