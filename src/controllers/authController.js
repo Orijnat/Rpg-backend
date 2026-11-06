@@ -14,7 +14,7 @@ function perfilDoUsuario(usuario) {
 }
 
 function usuarioParaResposta(usuario) {
-  const dados = usuario.toJSON();
+  const dados = typeof usuario.toJSON === "function" ? usuario.toJSON() : { ...usuario };
   dados.perfil = perfilDoUsuario(usuario);
   dados.role = dados.perfil === "mestre" ? "master" : "player";
   return dados;
@@ -169,7 +169,7 @@ export const authController = {
         user: usuarioParaResposta(user),
         character: personagemParaResposta(character),
         characters: [personagemParaResposta(character)],
-        campaign: targetCampaign ? targetCampaign.toJSON() : null,
+        campaign: targetCampaign ? (typeof targetCampaign.toJSON === "function" ? targetCampaign.toJSON() : targetCampaign) : null,
         token,
       });
     } catch (error) {
