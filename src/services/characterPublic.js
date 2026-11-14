@@ -95,12 +95,30 @@ export function publicCharacter(character) {
   data.currencies = data.moedas;
 
   if (data.user) {
+    // Nunca repassar o objeto `user` cru (pode conter hash de senha em conversões plain)
     data.owner = {
       id: data.user.id, username: data.user.username,
       email: data.user.email, perfil: data.user.perfil,
     };
+    data.user = data.owner;
   }
 
+  // Alias camelCase para clientes (o atributo/coluna é snake_case por compatibilidade)
+  const isoDate = (value) => {
+    const parsed = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+  };
+  const updatedAtIso = isoDate(data.updated_at);
+  const createdAtIso = isoDate(data.created_at);
+  if (updatedAtIso) data.updatedAt = updatedAtIso;
+  if (createdAtIso) data.createdAt = createdAtIso;
+
   delete data.bankPassword;
+  if (data.dadosExtras && typeof data.dadosExtras === "object") {
+    const extras = { ...data.dadosExtras };
+    delete extras.bankPassword;
+    delete extras.bankPasswordHash;
+    data.dadosExtras = extras;
+  }
   return data;
 }

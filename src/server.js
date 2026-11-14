@@ -8,6 +8,9 @@ import characterRoutes from "./routes/characterRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import campanhaRoutes from "./routes/campanhaRoutes.js";
 import npcRoutes from "./routes/npcRoutes.js";
+import rolagemRoutes from "./routes/rolagemRoutes.js";
+import arquivoRoutes from "./routes/arquivoRoutes.js";
+import exportRoutes from "./routes/exportRoutes.js";
 import mestreRecursosRoutes from "./routes/mestreRecursosRoutes.js";
 import { errorHandler } from "./middlewares/validate.js";
 import { generalRateLimiter, getAllowedOrigins } from "./middlewares/security.js";
@@ -68,6 +71,9 @@ app.use("/api/characters", characterRoutes);
 app.use("/api/campanhas", campanhaRoutes);
 app.use("/api/campanha", campanhaRoutes); // Suporte retrocompatível
 app.use("/api/npcs", npcRoutes);
+app.use("/api/rolagens", rolagemRoutes);
+app.use("/api/arquivos", arquivoRoutes);
+app.use("/api/export", exportRoutes);
 app.use("/api", mestreRecursosRoutes);
 app.use(errorHandler);
 

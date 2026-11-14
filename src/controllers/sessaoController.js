@@ -1,3 +1,4 @@
+import { UniqueConstraintError } from "sequelize";
 import { Session, Campaign, registrarAuditoria } from "../models/index.js";
 import { requireCampaignAccess } from "../services/campaignAccess.js";
 
@@ -34,25 +35,30 @@ export const sessaoController = {
         return res.status(400).json({ error: "O título da sessão é obrigatório." });
       }
 
-      // Auto-numerar se não informado
-      let numeroFinal = numero;
-      if (!numeroFinal) {
-        const ultima = await Session.findOne({
-          where: { campanhaId },
-          order: [["numero", "DESC"]],
-        });
-        numeroFinal = (ultima?.numero || 0) + 1;
-      }
+      // Auto-numerar se não informado — com retry para a corrida de numeração
+      // (dois mestres criando ao mesmo tempo): recalcula o próximo número e tenta de novo.
+      let sessao;
+      const maxTentativas = numero ? 1 : 3;
+      for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+        let numeroFinal = numero;
+        if (!numeroFinal) {
+          const ultima = await Session.findOne({
+            where: { campanhaId },
+            order: [["numero", "DESC"]],
+          });
+          numeroFinal = (ultima?.numero || 0) + 1;
+        }
 
-      const registroInicial = [
-        {
-          timestamp: new Date().toISOString(),
-          autor: req.user.username,
-          evento: `Sessão "${titulo.trim()}" criada.`,
-        },
-      ];
+        const registroInicial = [
+          {
+            timestamp: new Date().toISOString(),
+            autor: req.user.username,
+            evento: `Sessão "${titulo.trim()}" criada.`,
+          },
+        ];
 
-      const sessao = await Session.create({
+        try {
+          sessao = await Session.create({
         campanhaId,
         criadoPorId: req.user.id,
         titulo: titulo.trim(),
@@ -83,6 +89,16 @@ export const sessaoController = {
           lastModifiedAt: new Date().toISOString(),
         },
       });
+
+        } catch (error) {
+          const isUnique = error instanceof UniqueConstraintError || error?.name === "SequelizeUniqueConstraintError";
+          if (!isUnique) throw error;
+          // Número auto-gerado: recalcula e tenta novamente (corrida entre dois mestres).
+          if (!numero && tentativa < maxTentativas) continue;
+          return res.status(409).json({ error: "Já existe uma sessão com esse número. Tente novamente." });
+        }
+        break; // criado com sucesso — sai do loop
+      }
 
       await registrarAuditoria({
         usuarioId: req.user.id,

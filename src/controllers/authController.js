@@ -2,13 +2,10 @@ import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
+import { gerarToken, hashToken, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
+import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
-function getJwtSecret() {
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET não configurado.");
-  }
-  return process.env.JWT_SECRET;
-}
+import { getJwtSecret } from "../services/jwtSecret.js";
 
 function perfilDoUsuario(usuario) {
   return usuario.perfil === "mestre" || usuario.role === "master" ? "mestre" : "jogador";
@@ -27,19 +24,32 @@ function personagemParaResposta(personagem) {
   return publicCharacter(personagem);
 }
 
-function tokenParaUsuario(user) {
-  return jwt.sign(
+
+// Emite JWT e registra a sessão server-side (revogável).
+async function emitirLogin(usuario, req) {
+  const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const token = jwt.sign(
     {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      perfil: perfilDoUsuario(user),
-      sessionId: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: usuario.id,
+      username: usuario.username,
+      email: usuario.email,
+      role: usuario.role,
+      perfil: perfilDoUsuario(usuario),
+      sessionId,
     },
     getJwtSecret(),
     { expiresIn: "7d" },
   );
+  const decodedExp = jwt.decode(token)?.exp;
+  const expiraAt = decodedExp ? new Date(decodedExp * 1000) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await criarSessao({
+    usuarioId: usuario.id,
+    token,
+    expiraAt,
+    ip: req?.ip ?? null,
+    userAgent: req?.headers?.["user-agent"]?.slice(0, 500) ?? null,
+  });
+  return token;
 }
 
 export const authController = {
@@ -123,7 +133,12 @@ export const authController = {
         hpMax: 70,
         level: 1,
       });
-      await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
+      // Cria o registro de atributos; falha aqui não pode impedir o cadastro do herói
+      try {
+        await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
+      } catch (atributosError) {
+        console.error("Falha ao criar atributos do personagem:", atributosError?.message || atributosError);
+      }
 
       // Se ingressou via convite, registra como membro da campanha
       if (targetCampaign) {
@@ -149,22 +164,31 @@ export const authController = {
         });
       }
 
-      // Geração do token JWT (válido por 7 dias)
-      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const token = jwt.sign(
-        {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          perfil: perfilDoUsuario(user),
-          sessionId,
-        },
-        getJwtSecret(),
-        { expiresIn: "7d" }
-      );
+      // Verificação de e-mail: gera o token e envia (falha de e-mail não impede o cadastro)
+      let devPreviewUrl = null;
+      try {
+        const { token: emailToken, hash } = gerarToken();
+        user.verificationTokenHash = hash;
+        user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await user.save();
+        const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken });
+        if (mailResult?.devMode && process.env.NODE_ENV !== "production") {
+          devPreviewUrl = mailResult.url;
+          console.log(`[MAIL:dev] Link de verificação para ${user.email}: ${mailResult.url}`);
+        }
+      } catch (mailError) {
+        console.error("[MAIL] Falha ao enviar verificação de e-mail:", mailError?.message || mailError);
+      }
 
-      const characterCompleto = await Character.findByPk(character.id, { include: [includeAtributos] });
+      // Geração do token JWT (válido por 7 dias) + sessão server-side revogável
+      const token = await emitirLogin(user, req);
+
+      // Monta a resposta em memória (evita round-trip e funciona antes do flush)
+      const characterBase = typeof character?.toJSON === "function" ? character.toJSON() : { ...character };
+      const characterCompleto = {
+        ...characterBase,
+        atributos: { personagemId: characterBase.id, ...DEFAULT_ATRIBUTOS },
+      };
 
       return res.status(201).json({
         message: targetCampaign
@@ -175,6 +199,7 @@ export const authController = {
         characters: [personagemParaResposta(characterCompleto)],
         campaign: targetCampaign ? (typeof targetCampaign.toJSON === "function" ? targetCampaign.toJSON() : targetCampaign) : null,
         token,
+        ...(devPreviewUrl ? { devPreviewUrl } : {}),
       });
     } catch (error) {
       console.error("Erro no registro:", error);
@@ -209,6 +234,12 @@ export const authController = {
         return res.status(401).json({ error: "Credenciais inválidas. Verifique o usuário e a senha." });
       }
 
+      // Bloqueio opcional para contas não verificadas (desligado por padrão;
+      // ative com REQUIRE_EMAIL_VERIFICATION=true no ambiente).
+      if (String(process.env.REQUIRE_EMAIL_VERIFICATION || "").toLowerCase() === "true" && !user.emailVerified) {
+        return res.status(403).json({ error: "E-mail ainda não verificado. Confira sua caixa de entrada.", code: "EMAIL_NOT_VERIFIED" });
+      }
+
       // Busca todos os personagens deste usuário
       const characters = await Character.findAll({
         where: { userId: user.id },
@@ -216,19 +247,7 @@ export const authController = {
         order: [["updated_at", "DESC"]],
       });
 
-      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const token = jwt.sign(
-        {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          perfil: perfilDoUsuario(user),
-          sessionId,
-        },
-        getJwtSecret(),
-        { expiresIn: "7d" }
-      );
+      const token = await emitirLogin(user, req);
 
       return res.json({
         message: "Login realizado com sucesso!",
@@ -302,19 +321,7 @@ export const authController = {
 
       await user.save();
 
-      const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const token = jwt.sign(
-        {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          perfil: perfilDoUsuario(user),
-          sessionId,
-        },
-        getJwtSecret(),
-        { expiresIn: "7d" }
-      );
+      const token = await emitirLogin(user, req);
 
       return res.json({
         message: "Perfil atualizado com sucesso!",
@@ -331,18 +338,148 @@ export const authController = {
   async logout(req, res) {
     try {
       if (req.user) {
-        user_logout: {
-          req.user.ultimoLoginAt = new Date();
-          await req.user.save();
-        }
+        // Revoga a sessão atual no servidor; o JWT imediatamente deixa de valer.
+        req.user.ultimoLoginAt = new Date();
+        await req.user.save();
+        const authHeader = req.headers?.authorization;
+        const rawToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        if (rawToken) await revogarSessao(rawToken);
       }
       return res.json({
-        message: "Sessão encerrada com sucesso.",
+        message: "Sessão encerrada com sucesso. Tokens anteriores foram revogados.",
         revoked: true,
       });
     } catch (error) {
       console.error("Erro ao encerrar sessão:", error);
       return res.status(500).json({ error: "Erro ao encerrar sessão." });
+    }
+  },
+
+  // ── Verificação de e-mail e redefinição de senha ─────────────────────────
+
+  // Verifica o token enviado por e-mail e sela a conta
+  async verifyEmail(req, res) {
+    try {
+      const { token } = req.body || {};
+      if (!token) return res.status(400).json({ error: "Token de verificação ausente." });
+
+      const user = await User.findOne({
+        where: { verificationTokenHash: hashToken(token) },
+      });
+      if (!user) {
+        return res.status(400).json({ error: "Token inválido ou já utilizado." });
+      }
+      if (user.verificationExpiresAt && new Date(user.verificationExpiresAt) < new Date()) {
+        return res.status(400).json({ error: "Token expirado. Peça um novo e-mail de verificação." });
+      }
+
+      user.emailVerified = true;
+      user.verificationTokenHash = null;
+      user.verificationExpiresAt = null;
+      await user.save();
+      return res.json({ success: true, message: "E-mail verificado com sucesso!" });
+    } catch (error) {
+      console.error("Erro ao verificar e-mail:", error);
+      return res.status(500).json({ error: "Erro ao verificar o e-mail." });
+    }
+  },
+
+  // Reenvia o e-mail de verificação (sempre 200, anti-enumeração)
+  async resendVerification(req, res) {
+    try {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "E-mail obrigatório." });
+
+      const user = await User.findOne({ where: { email: String(email).trim().toLowerCase() } });
+      if (!user) {
+        return res.json({ success: true, message: "Se a conta existir, enviaremos um novo e-mail de verificação." });
+      }
+      if (user.emailVerified) {
+        return res.json({ success: true, message: "Este e-mail já está verificado." });
+      }
+
+      const { token: emailToken, hash } = gerarToken();
+      user.verificationTokenHash = hash;
+      user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await user.save();
+      const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken });
+      const devPreviewUrl = mailResult?.devMode && process.env.NODE_ENV !== "production" ? mailResult.url : undefined;
+      return res.json({
+        success: true,
+        message: "E-mail de verificação enviado. Confira sua caixa de entrada.",
+        ...(devPreviewUrl ? { devPreviewUrl } : {}),
+      });
+    } catch (error) {
+      console.error("Erro ao reenviar verificação:", error);
+      return res.status(500).json({ error: "Erro ao enviar o e-mail de verificação." });
+    }
+  },
+
+  // Pedido de redefinição de senha (sempre 200, anti-enumeração)
+  async forgotPassword(req, res) {
+    try {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "E-mail obrigatório." });
+
+      const user = await User.findOne({ where: { email: String(email).trim().toLowerCase() } });
+      if (!user) {
+        return res.json({ success: true, message: "Se a conta existir, enviaremos um link de redefinição." });
+      }
+
+      const { token: resetToken, hash } = gerarToken();
+      user.resetTokenHash = hash;
+      user.resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+      await user.save();
+      const mailResult = await enviarEmailRedefinicao({ para: user.email, token: resetToken });
+      const devPreviewUrl = mailResult?.devMode && process.env.NODE_ENV !== "production" ? mailResult.url : undefined;
+      return res.json({
+        success: true,
+        message: "Se a conta existir, enviaremos um link de redefinição para o e-mail informado.",
+        ...(devPreviewUrl ? { devPreviewUrl } : {}),
+      });
+    } catch (error) {
+      console.error("Erro ao pedir redefinição:", error);
+      return res.status(500).json({ error: "Erro ao processar o pedido de redefinição." });
+    }
+  },
+
+  // Redefine a senha com o token recebido por e-mail
+  async resetPassword(req, res) {
+    try {
+      const { token, password } = req.body || {};
+      if (!token || !password) return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
+      if (String(password).length < 6) {
+        return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
+      }
+
+      const user = await User.findOne({ where: { resetTokenHash: hashToken(token) } });
+      if (!user) {
+        return res.status(400).json({ error: "Token inválido ou já utilizado." });
+      }
+      if (user.resetTokenExpiresAt && new Date(user.resetTokenExpiresAt) < new Date()) {
+        return res.status(400).json({ error: "Token expirado. Peça um novo link de redefinição." });
+      }
+
+      user.password = String(password); // hook beforeUpdate aplica o hash bcrypt
+      user.resetTokenHash = null;
+      user.resetTokenExpiresAt = null;
+      user.passwordChangedAt = new Date(); // revoga JWTs emitidos antes deste momento
+      if (!user.emailVerified) user.emailVerified = true; // provou posse do e-mail
+      await user.save();
+      await revogarTodasSessoes(user.id); // encerra sessões abertas em outros aparelhos
+
+      await registrarAuditoria({
+        usuarioId: user.id,
+        acao: "REDEFINIR_SENHA",
+        entidade: "usuarios",
+        entidadeId: user.id,
+        dados: { username: user.username },
+        ip: req.ip,
+      });
+      return res.json({ success: true, message: "Senha redefinida com sucesso! Faça login com a nova senha." });
+    } catch (error) {
+      console.error("Erro ao redefinir senha:", error);
+      return res.status(500).json({ error: "Erro ao redefinir a senha." });
     }
   },
 };

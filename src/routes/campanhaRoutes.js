@@ -4,7 +4,7 @@ import { npcController } from "../controllers/npcController.js";
 import { notaController } from "../controllers/notaController.js";
 import { encontroController } from "../controllers/encontroController.js";
 import { recursoMapaController } from "../controllers/recursoMapaController.js";
-import { authMiddleware } from "../middlewares/authMiddleware.js";
+import { authMiddleware, requireMaster } from "../middlewares/authMiddleware.js";
 import { campanhaSchema, conviteSchema, encontroSchema, membroSchema, notaSchema, npcSchema, sessaoSchema } from "../schemas/apiSchemas.js";
 import { validar } from "../middlewares/validate.js";
 import { sessaoController } from "../controllers/sessaoController.js";
@@ -30,7 +30,7 @@ router.put("/", (req, res) => {
 });
 
 // Gerenciamento de campanhas
-router.post("/", validar(campanhaSchema), campanhaController.criar);
+router.post("/", requireMaster, validar(campanhaSchema), campanhaController.criar);
 router.post("/join", validar(conviteSchema), campanhaController.entrarPorCodigo);
 router.get("/:id", campanhaController.obterPorId);
 router.put("/:id", validar(campanhaSchema), campanhaController.atualizarPorId);
@@ -46,7 +46,7 @@ router.get("/:id/auditoria", campanhaController.obterAuditoria);
 
 // NPCs vinculados à campanha
 router.get("/:campanhaId/npcs", npcController.listar);
-router.post("/:campanhaId/npcs", validar(npcSchema), npcController.criar);
+router.post("/:campanhaId/npcs", requireMaster, validar(npcSchema), npcController.criar);
 
 // Notas públicas e privadas
 router.get("/:campanhaId/notas", notaController.listar);
@@ -54,16 +54,16 @@ router.post("/:campanhaId/notas", validar(notaSchema), notaController.criar);
 
 // Encontros táticos e iniciativa
 router.get("/:campanhaId/encontros", encontroController.listar);
-router.post("/:campanhaId/encontros", validar(encontroSchema), encontroController.criar);
+router.post("/:campanhaId/encontros", requireMaster, validar(encontroSchema), encontroController.criar);
 router.post("/:campanhaId/iniciativa/ficha", encontroController.receberIniciativaFicha);
 
 // Mapas táticos, marcadores e revelação
 router.get("/:campanhaId/mapas", recursoMapaController.listar);
-router.post("/:campanhaId/mapas", recursoMapaController.criar);
+router.post("/:campanhaId/mapas", requireMaster, recursoMapaController.criar);
 
 // Sessões de jogo (não confundir com sessoes_autenticacao)
 router.get("/:campanhaId/sessoes", sessaoController.listar);
-router.post("/:campanhaId/sessoes", validar(sessaoSchema), sessaoController.criar);
+router.post("/:campanhaId/sessoes", requireMaster, validar(sessaoSchema), sessaoController.criar);
 router.get("/sessoes/:id", sessaoController.obterPorId);
 router.put("/sessoes/:id", validar(sessaoSchema), sessaoController.atualizar);
 router.delete("/sessoes/:id", sessaoController.remover);

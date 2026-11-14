@@ -8,10 +8,14 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "db:init": "bash database/init-db.sh",
-    "db:migrate": "sequelize db:migrate",
+    "db:migrate": "node database/migrate.js",
     "db:migrate:undo": "sequelize db:migrate:undo",
     "db:seed": "node database/seed.js",
-    "test": "node --test"
+    "db:backup": "node database/backup.js",
+    "db:prune": "node database/backup.js --prune",
+    "uploads:clean": "node database/cleanup-uploads-orfaos.js",
+    "test": "node --test",
+    "db:migrate:sequelize": "sequelize db:migrate"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -19,9 +23,10 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.7.3",
-    "googleapis": "^186.0.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.5.0",
     "pg": "^8.13.1",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.5",

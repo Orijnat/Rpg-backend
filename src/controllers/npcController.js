@@ -1,11 +1,31 @@
 import { Op } from "sequelize";
-import { NPC, Campaign, CampaignMember, registrarAuditoria } from "../models/index.js";
+import { NPC, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
 
 async function podeGerenciarCampanha(user, campanhaId) {
   if (!campanhaId) return user?.perfil === "mestre" || user?.role === "master";
   const campanha = await Campaign.findByPk(campanhaId);
   return Boolean(campanha && campanha.proprietarioId === user.id &&
     (user.perfil === "mestre" || user.role === "master"));
+}
+
+const DADOS_MESTRE_KEYS = ["notasMestre", "secret", "segredo", "notas_mestre"];
+
+// Remove notas privadas do mestre de NPCs visíveis a quem não é proprietário
+function npcParaMembro(npc, user) {
+  if (!npc) return npc;
+  const isOwnerMaster = user?.perfil === "mestre" && (
+    npc.criadoPorId === user.id || user?.isCampanhaOwner
+  );
+  const data = npc.toJSON ? npc.toJSON() : { ...npc };
+  if (isOwnerMaster) return data;
+  const extras = data.dadosExtras || {};
+  for (const key of DADOS_MESTRE_KEYS) {
+    if (extras[key] !== undefined) delete extras[key];
+  }
+  // O proprietário da campanha também enxerga tudo: filtramos só quando o usuário NÃO é dono da campanha.
+  // Nota: a checagem fina por campanha é feita pelo chamador via podeLerCampanha/podeGerenciarCampanha.
+  data.dadosExtras = extras;
+  return data;
 }
 
 async function podeLerCampanha(user, campanhaId) {
@@ -23,34 +43,45 @@ export const npcController = {
   // Listar NPCs com busca, filtros de tags, status, atitude e ordenação
   async listar(req, res) {
     try {
-      const { campanhaId } = req.params;
+      const campanhaId = req.params.campanhaId || req.query.campanhaId || undefined;
       const { q, tag, status, attitude, sort } = req.query;
 
-      const where = {};
+      const andClauses = [];
       if (campanhaId && campanhaId !== "todas") {
         if (!(await podeLerCampanha(req.user, campanhaId))) {
           return res.status(403).json({ error: "Acesso restrito aos membros desta campanha." });
         }
-        where.campanhaId = campanhaId;
+        andClauses.push({ campanhaId });
+        const campanha = await Campaign.findByPk(campanhaId, { attributes: ["id", "proprietarioId"] });
+        const isOwnerMaster = (req.user?.perfil === "mestre" || req.user?.role === "master") && campanha?.proprietarioId === req.user.id;
+        if (!isOwnerMaster) {
+          andClauses.push(sequelize.literal(`dados_extras @> '{"sharedWithPlayers": true}'::jsonb`));
+        }
       } else {
         const campanhas = await Campaign.findAll({
           where: { proprietarioId: req.user.id },
           attributes: ["id"],
         });
-        where[Op.or] = [
-          { criadoPorId: req.user.id },
-          { campanhaId: campanhas.map((campanha) => campanha.id) },
-        ];
+        andClauses.push({
+          [Op.or]: [
+            { criadoPorId: req.user.id },
+            { campanhaId: campanhas.map((campanha) => campanha.id) },
+          ],
+        });
       }
 
       if (q && q.trim()) {
         const queryTerm = `%${q.trim()}%`;
-        where[Op.or] = [
-          { nome: { [Op.iLike]: queryTerm } },
-          { papel: { [Op.iLike]: queryTerm } },
-          { descricao: { [Op.iLike]: queryTerm } },
-        ];
+        andClauses.push({
+          [Op.or]: [
+            { nome: { [Op.iLike]: queryTerm } },
+            { papel: { [Op.iLike]: queryTerm } },
+            { descricao: { [Op.iLike]: queryTerm } },
+          ],
+        });
       }
+
+      const where = andClauses.length > 1 ? { [Op.and]: andClauses } : (andClauses[0] || {});
 
       let order = [["updated_at", "DESC"]];
       if (sort === "nome_asc") order = [["nome", "ASC"]];
@@ -85,7 +116,15 @@ export const npcController = {
         });
       }
 
-      return res.json(npcs);
+      // Visitantes (não proprietários da campanha) não veem notas do mestre
+      const isMestreOwner = req.user?.perfil === "mestre" || req.user?.role === "master";
+      const visible = [];
+      for (const n of npcs) {
+        const camp = n.campanhaId ? await Campaign.findByPk(n.campanhaId, { attributes: ["id", "proprietarioId"] }) : null;
+        const canSeeAll = isMestreOwner && (n.criadoPorId === req.user.id || camp?.proprietarioId === req.user.id);
+        visible.push(canSeeAll ? n : npcParaMembro(n, req.user));
+      }
+      return res.json(visible);
     } catch (error) {
       console.error("Erro ao listar NPCs:", error);
       return res.status(500).json({ error: "Erro ao listar NPCs." });
@@ -110,6 +149,7 @@ export const npcController = {
         attitude,
         acoes,
         notasMestre,
+        sharedWithPlayers,
       } = req.body;
 
       if (!nome || !nome.trim()) {
@@ -128,6 +168,7 @@ export const npcController = {
         attitude: attitude || "Hostil",
         acoes: Array.isArray(acoes) ? acoes : [],
         notasMestre: notasMestre || "",
+        sharedWithPlayers: Boolean(sharedWithPlayers),
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
         lastModifiedAt: new Date().toISOString(),
       };
@@ -169,11 +210,12 @@ export const npcController = {
       const { id } = req.params;
       const npc = await NPC.findByPk(id);
       if (!npc) return res.status(404).json({ error: "NPC não encontrado." });
-      if (!(await podeLerCampanha(req.user, npc.campanhaId)) ||
-          !(await podeGerenciarCampanha(req.user, npc.campanhaId))) {
+      if (!(await podeLerCampanha(req.user, npc.campanhaId))) {
         return res.status(403).json({ error: "Você não pode acessar este NPC." });
       }
-      return res.json(npc);
+      const isMasterOwner = (req.user?.perfil === "mestre" || req.user?.role === "master") &&
+        (npc.criadoPorId === req.user.id || (npc.campanhaId && (await Campaign.findByPk(npc.campanhaId, { attributes: ["proprietarioId"] }))?.proprietarioId === req.user.id));
+      return res.json(isMasterOwner ? npc : npcParaMembro(npc, req.user));
     } catch (error) {
       console.error("Erro ao obter NPC:", error);
       return res.status(500).json({ error: "Erro ao obter NPC." });
@@ -204,6 +246,7 @@ export const npcController = {
         attitude,
         acoes,
         notasMestre,
+        sharedWithPlayers,
       } = req.body;
 
       const dadosExtras = {
@@ -216,6 +259,7 @@ export const npcController = {
         ...(attitude !== undefined ? { attitude } : {}),
         ...(acoes !== undefined ? { acoes: Array.isArray(acoes) ? acoes : [] } : {}),
         ...(notasMestre !== undefined ? { notasMestre } : {}),
+        ...(sharedWithPlayers !== undefined ? { sharedWithPlayers: Boolean(sharedWithPlayers) } : {}),
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
         lastModifiedAt: new Date().toISOString(),
       };

@@ -15,7 +15,7 @@ export const Character = sequelize.define(
     },
     userId: {
       type: DataTypes.UUID,
-      allowNull: true,
+      allowNull: false,
       field: "usuario_id",
       references: { model: "usuarios", key: "id" },
       onDelete: "CASCADE",

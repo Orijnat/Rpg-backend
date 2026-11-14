@@ -5,7 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-de-pelo-meno
 
 import { campanhaController } from "../src/controllers/campanhaController.js";
 import { authController } from "../src/controllers/authController.js";
-import { Campaign, User, Character, CampaignMember } from "../src/models/index.js";
+import { Campaign, User, Character, CampaignMember, SessaoAutenticacao } from "../src/models/index.js";
 
 test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
   await t.test("1. consultarConvitePublico rejeita código vazio", async () => {
@@ -133,9 +133,12 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
     const originalUserCreate = User.create;
     const originalCharCreate = Character.create;
     const originalMemberCreate = CampaignMember.create;
+    const originalSessaoCreate = SessaoAutenticacao.create;
 
     let memberCreatedWith = null;
     let characterCreatedWith = null;
+
+    SessaoAutenticacao.create = async () => ({}); // registro de sessão server-side mockado
 
     Campaign.findOne = async ({ where }) => {
       if (where.codigoConvite === "INV-CONVITE-OK") {
@@ -214,6 +217,7 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
       User.create = originalUserCreate;
       Character.create = originalCharCreate;
       CampaignMember.create = originalMemberCreate;
+    SessaoAutenticacao.create = originalSessaoCreate;
     }
   });
 

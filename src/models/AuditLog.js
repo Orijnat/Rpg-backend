@@ -72,7 +72,16 @@ export async function registrarAuditoria({ usuarioId, campanhaId, acao, entidade
       ip,
     });
   } catch (err) {
-    console.error("Falha ao registrar auditoria:", err.message);
+    // A auditoria nunca derruba a requisição, mas a falha fica registrada com contexto
+    // suficiente para investigação (quem, o quê, em qual entidade).
+    console.error("[AUDITORIA-FALHA]", {
+      acao,
+      entidade,
+      entidadeId: entidadeId ?? null,
+      usuarioId: usuarioId ?? null,
+      campanhaId: campanhaId ?? null,
+      erro: err?.message || String(err),
+    });
     return null;
   }
 }

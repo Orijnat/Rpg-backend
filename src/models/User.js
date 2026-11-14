@@ -71,6 +71,42 @@ export const User = sequelize.define(
         imagensMapas: [],
       },
     },
+    emailVerified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: "email_verified",
+    },
+    verificationTokenHash: {
+      type: DataTypes.STRING(128),
+      allowNull: true,
+      defaultValue: null,
+      field: "verification_token_hash",
+    },
+    verificationExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+      field: "verification_expires_at",
+    },
+    resetTokenHash: {
+      type: DataTypes.STRING(128),
+      allowNull: true,
+      defaultValue: null,
+      field: "reset_token_hash",
+    },
+    resetTokenExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+      field: "reset_token_expires_at",
+    },
+    passwordChangedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+      field: "password_changed_at",
+    },
   },
   {
     tableName: "usuarios",
@@ -101,11 +137,15 @@ User.prototype.checkPassword = async function (password) {
   return bcrypt.compare(password, this.password);
 };
 
-// Oculta a senha ao serializar para JSON e expõe role
+// Oculta segredos ao serializar para JSON e expõe role
 User.prototype.toJSON = function () {
   const values = { ...this.get() };
   values.role = values.perfil === "mestre" ? "master" : "player";
   delete values.password;
   delete values.senha_hash;
+  delete values.verificationTokenHash;
+  delete values.verificationExpiresAt;
+  delete values.resetTokenHash;
+  delete values.resetTokenExpiresAt;
   return values;
 };

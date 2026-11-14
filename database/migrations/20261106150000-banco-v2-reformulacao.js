@@ -4,22 +4,17 @@ import { fileURLToPath } from "node:url";
 
 const diretorioAtual = path.dirname(fileURLToPath(import.meta.url));
 
+// Aplica banco_v2.sql (idempotente) dentro de UMA transação.
+// Qualquer falha aborta tudo; sem estados parciais.
 export async function up(queryInterface) {
   const sql = await fs.readFile(path.resolve(diretorioAtual, "..", "banco_v2.sql"), "utf8");
-  // Executa o script banco_v2.sql idempotente
-  await queryInterface.sequelize.query(sql);
+  await queryInterface.sequelize.transaction(async (transaction) => {
+    await queryInterface.sequelize.query(sql, { transaction });
+  });
 }
 
-export async function down(queryInterface) {
-  // Reversibilidade conforme skill banco-de-dados-ops
-  await queryInterface.sequelize.query(`
-    DROP TABLE IF EXISTS auditoria CASCADE;
-    DROP TABLE IF EXISTS iniciativas CASCADE;
-    DROP TABLE IF EXISTS encontros CASCADE;
-    DROP TABLE IF EXISTS npcs CASCADE;
-    DROP TABLE IF EXISTS sessoes_jogo CASCADE;
-    DROP TABLE IF EXISTS cofres CASCADE;
-    DROP TABLE IF EXISTS itens_inventario CASCADE;
-    DROP TABLE IF EXISTS pericias_personagem CASCADE;
-  `);
+// Sem down destrutivo: reverter aqui apagaria dados reais do jogador/mestre.
+// Restauração deve vir de backup (ver skill banco-de-dados-ops).
+export async function down() {
+  throw new Error("Migration de reformulação não possui down automático — restaure a partir de backup.");
 }

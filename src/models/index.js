@@ -12,6 +12,9 @@ import { Encounter } from "./Encounter.js";
 import { Session } from "./Session.js";
 import { CampaignResource } from "./CampaignResource.js";
 import { AuditLog, registrarAuditoria } from "./AuditLog.js";
+import { Rolagem } from "./Rolagem.js";
+import { SessaoAutenticacao } from "./SessaoAutenticacao.js";
+import { Arquivo } from "./Arquivo.js";
 
 User.prototype.isMestre = function isMestre() {
   return this.perfil === "mestre" || this.role === "master";
@@ -208,5 +211,8 @@ export {
   Session,
   CampaignResource,
   AuditLog,
+  Rolagem,
+  SessaoAutenticacao,
+  Arquivo,
   registrarAuditoria,
 };

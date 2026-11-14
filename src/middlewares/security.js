@@ -40,7 +40,7 @@ export const generalRateLimiter = rateLimit({
 
 export const authRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 5,
+  limit: Math.max(1, Number(process.env.AUTH_RATE_LIMIT || 5) || 5),
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Limite de tentativas de autenticação excedido. Tente novamente mais tarde." },

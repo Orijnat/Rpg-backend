@@ -25,6 +25,10 @@ export const Campaign = sequelize.define(
         notEmpty: true,
       },
     },
+    cenario: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+    },
     descricao: {
       type: DataTypes.TEXT,
       allowNull: true,

@@ -1,4 +1,4 @@
-import { Character, AtributosPersonagem, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria } from "../models/index.js";
+import { Character, AtributosPersonagem, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 import bcrypt from "bcryptjs";
 import { parsePaginationQuery } from "../services/pagination.js";
@@ -12,16 +12,14 @@ async function canManageCharacter(user, character) {
   if (!user || !character) return false;
   if (character.userId === user.id) return true;
   if (user.perfil === "mestre" || user.role === "master") {
-    if (character.campanhaId) {
-      const campanha = await Campaign.findByPk(character.campanhaId);
-      if (campanha?.proprietarioId === user.id) return true;
-    }
-    // Permite que o mestre visualize/gerencie personagens de qualquer jogador que seja membro de suas mesas
+    // Uma única consulta cobre tanto o dono da campanha do personagem
+    // quanto o caso "membro de mesa do mestre" (sem idas e voltas por candidato).
     const campanhasProprias = await Campaign.findAll({
       where: { proprietarioId: user.id },
       attributes: ["id"],
     });
     const campaignIds = campanhasProprias.map((c) => c.id);
+    if (character.campanhaId && campaignIds.includes(character.campanhaId)) return true;
     if (campaignIds.length > 0) {
       const membro = await CampaignMember.findOne({
         where: { usuarioId: character.userId, campanhaId: campaignIds, bloqueado: false },
@@ -71,11 +69,16 @@ const ATRIBUTO_ALIAS = {
   sabedoria: "SAB", espirito: "ESP", carisma: "CAR", inteligencia: "INT",
 };
 
-function normalizeCharacterPayload(payload, user) {
+function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   const data = { ...payload };
   delete data.id;
   delete data.userId;
   delete data.bankPassword;
+  delete data.updatedAt;
+  delete data.updated_at;
+  delete data.createdAt;
+  delete data.created_at;
+  delete data.force;
 
   // Campos que vão para a tabela personagens
   if (data.name !== undefined)      data.name = data.name;
@@ -89,8 +92,10 @@ function normalizeCharacterPayload(payload, user) {
   }
   delete data.xp;
 
-  // Tudo mais vai para dados_extras (merge incremental)
-  const extras = { ...(payload.dadosExtras || {}) };
+  // Tudo mais vai para dados_extras (merge sobre o existente para não apagar campos preservados no servidor)
+  const extras = { ...(existingExtras || {}), ...(payload.dadosExtras || {}) };
+  delete extras.bankPassword;
+  delete extras.bankPasswordHash;
 
   // Atributos escalares → delegados para AtributosPersonagem (tratados no create/update)
   // updates parciais só mexem nos atributos enviados; mirror no extras só para os informados
@@ -108,6 +113,7 @@ function normalizeCharacterPayload(payload, user) {
   if (payload.contratosDados  !== undefined) extras.contratosDados  = payload.contratosDados;
   if (payload.contracts       !== undefined) extras.contratosDados  = payload.contracts;
   if (payload.jogadores       !== undefined) extras.jogadores       = payload.jogadores;
+  if (payload.players         !== undefined) extras.jogadores       = payload.players;
   if (payload.npcs            !== undefined) extras.npcs            = payload.npcs;
   if (payload.imagensAnotacoes !== undefined) extras.imagensAnotacoes = payload.imagensAnotacoes;
   if (payload.notesImages     !== undefined) extras.imagensAnotacoes = payload.notesImages;
@@ -164,6 +170,8 @@ async function upsertAtributos(personagemId, atributosData) {
 
 // ── Include padrão para busca com atributos ──────────────────────────────────
 const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
+// Nunca selecionar `password` aqui: o hash vazaria nos payloads de personagem.
+// A verificação do cofre busca o hash do dono separadamente quando necessário.
 const includeUser = { model: User, as: "user", attributes: ["id", "username", "email", "perfil"] };
 
 export const characterController = {
@@ -172,8 +180,49 @@ export const characterController = {
       const isMaster = req.user.perfil === "mestre" || req.user.role === "master";
       let whereClause;
 
-      if (!isMaster) {
-        whereClause = { userId: req.user.id };
+      // Validação de campanha quando filtrada por campanhaId
+      let campaignFilter = null;
+      let isOwnerMaster = false;
+      if (req.query.campanhaId) {
+        const campanha = await Campaign.findByPk(req.query.campanhaId, {
+          attributes: ["id", "proprietarioId"],
+        });
+        if (!campanha) {
+          return res.status(404).json({ error: "Campanha não encontrada." });
+        }
+        isOwnerMaster = isMaster && campanha.proprietarioId === req.user.id;
+        if (!isOwnerMaster) {
+          const membro = await CampaignMember.findOne({
+            where: { campanhaId: campanha.id, usuarioId: req.user.id, bloqueado: false },
+          });
+          if (!membro) {
+            return res.status(403).json({ error: "Acesso restrito a esta campanha." });
+          }
+        }
+        campaignFilter = campanha.id;
+      }
+
+      if (campaignFilter && !isOwnerMaster) {
+        // Membro comum: só a própria ficha nesta campanha
+        whereClause = { userId: req.user.id, campanhaId: campaignFilter };
+      } else if (!isMaster) {
+        // Heróis compartilhados pelo mestre com a mesa: membros veem a ficha (somente leitura)
+        const memberships = await CampaignMember.findAll({
+          where: { usuarioId: req.user.id, bloqueado: false },
+          attributes: ["campanhaId"],
+        });
+        const campaignIds = [...new Set(memberships.map((m) => m.campanhaId))];
+        if (campaignIds.length > 0) {
+          const sharedLiteral = sequelize.literal(`"dados_extras" ->> 'sharedWithPlayers' = 'true'`);
+          whereClause = {
+            [Op.or]: [
+              { userId: req.user.id },
+              { [Op.and]: [{ campanhaId: campaignIds }, sharedLiteral] },
+            ],
+          };
+        } else {
+          whereClause = { userId: req.user.id };
+        }
       } else {
         const campanhasProprias = await Campaign.findAll({
           where: { proprietarioId: req.user.id },
@@ -185,7 +234,7 @@ export const characterController = {
         if (campaignIds.length > 0) {
           const membros = await CampaignMember.findAll({
             where: {
-              campanhaId: req.query.campanhaId ? req.query.campanhaId : campaignIds,
+              campanhaId: campaignFilter || campaignIds,
               bloqueado: false,
             },
             attributes: ["usuarioId"],
@@ -193,10 +242,10 @@ export const characterController = {
           memberUserIds = membros.map((m) => m.usuarioId);
         }
 
-        if (req.query.campanhaId) {
+        if (campaignFilter) {
           whereClause = {
             [Op.or]: [
-              { campanhaId: req.query.campanhaId },
+              { campanhaId: campaignFilter },
               { userId: memberUserIds },
             ],
           };
@@ -259,9 +308,17 @@ export const characterController = {
         ],
       });
       if (!character) return res.status(404).json({ error: "Personagem não encontrado." });
-      const canManage = await canManageCharacter(req.user, character);
+      let canManage = await canManageCharacter(req.user, character);
+      if (!canManage && character.dadosExtras?.sharedWithPlayers === true && character.campanhaId) {
+        const membro = await CampaignMember.findOne({
+          where: { campanhaId: character.campanhaId, usuarioId: req.user.id, bloqueado: false },
+        });
+        canManage = Boolean(membro);
+      }
       if (!canManage) return res.status(403).json({ error: "Este personagem não pertence às suas campanhas ou perfil." });
-      return res.json(publicCharacter(character));
+      const publicData = publicCharacter(character);
+      publicData.readOnly = !(await canManageCharacter(req.user, character));
+      return res.json(publicData);
     } catch (error) {
       console.error("Erro ao buscar personagem:", error);
       return res.status(500).json({ error: "Erro interno ao buscar personagem." });
@@ -307,7 +364,7 @@ export const characterController = {
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
 
-      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
+      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user, character.dadosExtras || {});
       await character.update(characterData);
       await upsertAtributos(id, atributosPatch);
 
@@ -328,36 +385,42 @@ export const characterController = {
   async sync(req, res) {
     try {
       const id = req.body?.id;
-      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
 
-      if (id) {
-        const target = await Character.findByPk(id);
-        if (!target) {
-          return res.status(404).json({ error: "Personagem não encontrado para sincronização." });
+      // Sincronização exige o id da ficha (o cliente sempre o possui após o registro/hidratação).
+      // Sem id, recusa em vez de adivinhar o alvo e sobrescrever a ficha errada.
+      if (!id) {
+        return res.status(400).json({ error: "ID da ficha ausente para sincronização. Recarregue a página." });
+      }
+
+      const target = await Character.findByPk(id);
+      if (!target) {
+        return res.status(404).json({ error: "Personagem não encontrado para sincronização." });
+      }
+      const canManage = await canManageCharacter(req.user, target);
+      if (!canManage) return res.status(403).json({ error: "Permissão negada para sincronizar este personagem." });
+
+      // Concorrência otimista: o cliente informa a versão remota que ele viu (`updatedAt`).
+      // Comparação estrita em milissegundos: qualquer gravação no servidor entre a leitura
+      // do cliente e este save invalida a versão ecoada.
+      if (!req.body?.force && req.body?.updatedAt) {
+        const seen = Date.parse(req.body.updatedAt);
+        const serverUpdatedAt = target.updated_at ?? target.updatedAt;
+        const current = serverUpdatedAt instanceof Date ? serverUpdatedAt.getTime() : Date.parse(serverUpdatedAt);
+        if (!Number.isNaN(seen) && !Number.isNaN(current) && seen !== current) {
+          const fullRemote = await Character.findByPk(id, { include: [includeAtributos] });
+          return res.status(409).json({
+            error: "A ficha foi alterada no servidor desde a sua última sincronização.",
+            conflict: true,
+            serverCharacter: publicCharacter(fullRemote),
+          });
         }
-        const canManage = await canManageCharacter(req.user, target);
-        if (!canManage) return res.status(403).json({ error: "Permissão negada para sincronizar este personagem." });
-        await target.update(characterData);
-        await upsertAtributos(id, atributosPatch);
-        const full = await Character.findByPk(id, { include: [includeAtributos] });
-        return res.json({ success: true, message: "Ficha sincronizada com sucesso.", character: publicCharacter(full) });
       }
 
-      // Sem id: reaproveita a ficha mais recente do próprio usuário (evita fichas duplicadas);
-      // só cria uma nova quando o usuário ainda não possui nenhuma.
-      let character = await Character.findOne({
-        where: { userId: req.user.id },
-        order: [["updated_at", "DESC"]],
-      });
-      if (character) {
-        await character.update(characterData);
-        await upsertAtributos(character.id, atributosPatch);
-      } else {
-        characterData.userId = req.user.id;
-        character = await Character.create(characterData);
-        await upsertAtributos(character.id, atributosPatch);
-      }
+      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user, target.dadosExtras || {});
+      await target.update(characterData);
+      await upsertAtributos(id, atributosPatch);
 
+      const character = target;
       const full = await Character.findByPk(character.id, { include: [includeAtributos] });
       return res.json({ success: true, message: "Ficha sincronizada com sucesso.", character: publicCharacter(full) });
     } catch (error) {
@@ -379,15 +442,25 @@ export const characterController = {
         });
       }
 
-      const character = await Character.findByPk(id, { attributes: ["id", "dadosExtras", "userId", "campanhaId"] });
+      const character = await Character.findByPk(id, {
+        attributes: ["id", "dadosExtras", "userId", "campanhaId"],
+      });
       if (!character) return res.status(404).json({ error: "Personagem não encontrado." });
       const canManage = await canManageCharacter(req.user, character);
       if (!canManage) return res.status(403).json({ error: "Permissão negada para acessar o cofre deste personagem." });
 
-      const storedPassword = String(character.dadosExtras?.bankPassword || "133313");
-      const isValid = storedPassword.startsWith("$2")
-        ? await bcrypt.compare(String(password ?? ""), storedPassword)
-        : storedPassword === String(password ?? "");
+      // Senha personalizada da ficha, se definida; senão, a senha do login do DONO da ficha
+      // (mestre não abre o cofre do jogador com a própria senha).
+      const customHash = character.dadosExtras?.bankPasswordHash;
+      let isValid = false;
+      if (customHash && String(customHash).startsWith("$2")) {
+        isValid = await bcrypt.compare(String(password ?? ""), String(customHash));
+      } else {
+        const owner = await User.findByPk(character.userId, { attributes: ["id", "password"] });
+        if (owner?.password) {
+          isValid = await bcrypt.compare(String(password ?? ""), owner.password);
+        }
+      }
 
       if (!isValid) {
         const failures = (attempt?.failures || 0) + 1;
@@ -402,6 +475,41 @@ export const characterController = {
     } catch (error) {
       console.error("Erro ao verificar senha bancária:", error);
       return res.status(500).json({ error: "Erro ao validar senha bancária." });
+    }
+  },
+
+  // Definir/remover a senha personalizada do cofre da ficha
+  async setBankPassword(req, res) {
+    try {
+      const { id } = req.params;
+      const { password } = req.body || {};
+      const character = await Character.findByPk(id);
+      if (!character) return res.status(404).json({ error: "Personagem não encontrado." });
+      const canManage = await canManageCharacter(req.user, character);
+      if (!canManage) return res.status(403).json({ error: "Permissão negada para alterar a senha do cofre." });
+
+      const extras = { ...(character.dadosExtras || {}) };
+      if (password === undefined || password === "") {
+        delete extras.bankPasswordHash;
+        delete extras.bankPassword;
+      } else {
+        const salt = await bcrypt.genSalt(10);
+        extras.bankPasswordHash = await bcrypt.hash(String(password), salt);
+        delete extras.bankPassword;
+        extras.lastModifiedBy = { id: req.user.id, name: req.user.username, role: req.user.role };
+        extras.lastModifiedAt = new Date().toISOString();
+      }
+
+      await character.update({ dadosExtras: extras });
+      await registrarAuditoria({
+        usuarioId: req.user.id, campanhaId: character.campanhaId,
+        acao: "ALTERAR_SENHA_COFRE", entidade: "personagens", entidadeId: character.id,
+        dados: { nome: character.name, personalizada: Boolean(password) }, ip: req.ip,
+      });
+      return res.json({ success: true, custom: Boolean(password), message: password ? "Senha do cofre atualizada." : "Senha personalizada removida; o cofre agora usa a senha do login do dono da ficha." });
+    } catch (error) {
+      console.error("Erro ao alterar senha do cofre:", error);
+      return res.status(500).json({ error: "Erro ao alterar a senha do cofre." });
     }
   },
 

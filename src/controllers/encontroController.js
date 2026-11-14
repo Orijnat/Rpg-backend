@@ -1,4 +1,4 @@
-import { Encounter, Campaign, CampaignMember, registrarAuditoria } from "../models/index.js";
+import { Encounter, Campaign, CampaignMember, User, registrarAuditoria } from "../models/index.js";
 import { requireCampaignAccess } from "../services/campaignAccess.js";
 
 export const encontroController = {
@@ -176,7 +176,9 @@ export const encontroController = {
         });
       }
 
-      // Se não existir encontro, busca campanha válida ou cria um encontro
+      // Se não existir encontro, só mestres podem abrir um automaticamente;
+      // jogadores recebem instrução para o mestre iniciar o combate.
+      const isMestreReq = req.user?.perfil === "mestre" || req.user?.role === "master";
       let targetCampanhaId = campanhaId && campanhaId !== "ativa" ? campanhaId : null;
       if (!targetCampanhaId) {
         const anyCamp = await Campaign.findOne({
@@ -186,7 +188,7 @@ export const encontroController = {
         targetCampanhaId = anyCamp?.id || null;
       }
 
-      if (!encontro && targetCampanhaId) {
+      if (!encontro && targetCampanhaId && isMestreReq) {
         encontro = await Encounter.create({
           campanhaId: targetCampanhaId,
           criadoPorId: req.user.id,
@@ -203,7 +205,7 @@ export const encontroController = {
       }
 
       if (!encontro) {
-        return res.status(404).json({ error: "Nenhum encontro ou campanha ativa encontrada para sincronizar iniciativa." });
+        return res.status(404).json({ error: "Nenhum encontro ativo. O mestre precisa iniciar o combate na Sala de Guerra antes de receber iniciativas." });
       }
 
       const iniciativaList = Array.isArray(encontro.dadosExtras?.iniciativa)
@@ -251,6 +253,37 @@ export const encontroController = {
           lastModifiedAt: new Date().toISOString(),
         },
       });
+
+      // Espelha a iniciativa na Sala de Guerra do mestre (dados_mestre do proprietário)
+      try {
+        const campanha = await Campaign.findByPk(encontro.campanhaId, { attributes: ["id", "proprietarioId"] });
+        if (campanha?.proprietarioId) {
+          const mestreUser = await User.findByPk(campanha.proprietarioId);
+          if (mestreUser) {
+            const dm = { ...(mestreUser.dadosMestre || {}) };
+            const list = Array.isArray(dm.iniciativa) ? [...dm.iniciativa] : [];
+            const idx = list.findIndex((item) => item.id === combatantId);
+            const entry = {
+              id: combatantId,
+              name: combatantData.name,
+              type: combatantData.type,
+              initiative: combatantData.initiative,
+              hp: combatantData.hp,
+              hpMax: combatantData.hpMax,
+              conditions: idx >= 0 ? list[idx].conditions || [] : [],
+            };
+            if (idx >= 0) list[idx] = { ...list[idx], ...entry };
+            else list.push(entry);
+            list.sort((a, b) => Number(b.initiative) - Number(a.initiative));
+            dm.iniciativa = list;
+            if (dm.combatRound == null) dm.combatRound = 1;
+            if (dm.activeTurnIndex == null) dm.activeTurnIndex = 0;
+            await mestreUser.update({ dadosMestre: dm });
+          }
+        }
+      } catch (mirrorError) {
+        console.warn("Não foi possível espelhar a iniciativa na Sala de Guerra:", mirrorError?.message || mirrorError);
+      }
 
       return res.json({
         success: true,

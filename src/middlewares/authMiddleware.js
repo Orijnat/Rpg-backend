@@ -1,12 +1,17 @@
 import jwt from "jsonwebtoken";
 import { User } from "../models/index.js";
+import { verificarSessao } from "../services/sessionAuth.js";
+
+import { getJwtSecret } from "../services/jwtSecret.js";
 
 function ensureJwtSecret(res) {
-  if (!process.env.JWT_SECRET) {
+  try {
+    getJwtSecret();
+    return true;
+  } catch {
     res.status(500).json({ error: "Autenticação indisponível por configuração do servidor." });
     return false;
   }
-  return true;
 }
 
 export async function authMiddleware(req, res, next) {
@@ -18,11 +23,26 @@ export async function authMiddleware(req, res, next) {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
 
     const user = await User.findByPk(decoded.id);
     if (!user || user.ativo === false) {
       return res.status(401).json({ error: "Usuário não encontrado ou sessão inválida." });
+    }
+
+    // Revogação por troca de senha. iat tem precisão de segundo; passwordChangedAt, milissegundo.
+    // Token emitido no MESMO segundo da troca pode ser anterior a ela, então revogamos também (<=).
+    if (user.passwordChangedAt && decoded.iat) {
+      const changedAtSeconds = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+      if (decoded.iat <= changedAtSeconds) {
+        return res.status(401).json({ error: "Sessão expirada por alteração de senha. Faça login novamente." });
+      }
+    }
+
+    // Revogação server-side: a sessão precisa existir e estar válida (logout/reset invalidam na hora)
+    const sessao = await verificarSessao(token);
+    if (!sessao) {
+      return res.status(401).json({ error: "Sessão revogada ou expirada. Faça login novamente." });
     }
 
     req.user = user;
@@ -42,7 +62,7 @@ export async function optionalAuthMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, getJwtSecret());
       const user = await User.findByPk(decoded.id);
       if (user) {
         req.user = user;

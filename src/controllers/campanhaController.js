@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import { Campaign, CampaignMember, User, Character, NPC, AuditLog, registrarAuditoria } from "../models/index.js";
+import { Campaign, CampaignMember, User, Character, NPC, AuditLog, AtributosPersonagem, registrarAuditoria } from "../models/index.js";
+import { publicCharacter } from "../services/characterPublic.js";
 
 const dadosMestrePadrao = {
   tituloSessao: "Próxima sessão",
@@ -8,6 +9,38 @@ const dadosMestrePadrao = {
   iniciativa: [],
   imagensMapas: [],
 };
+
+const DADOS_MESTRE_ALLOWED = new Set([
+  "tituloSessao",
+  "anotacoesSessao",
+  "npcs",
+  "iniciativa",
+  "imagensMapas",
+  "combatRound",
+  "activeTurnIndex",
+  "sessionTitle",
+  "sessionNotes",
+]);
+
+// Aceita apenas chaves conhecidas da Sala de Guerra (legado /api/campanha)
+function sanitizeDadosMestre(body) {
+  const out = { ...dadosMestrePadrao };
+  const srcBody = body && typeof body === "object" ? body : {};
+  for (const key of Object.keys(srcBody)) {
+    if (!DADOS_MESTRE_ALLOWED.has(key)) continue;
+    const value = srcBody[key];
+    if (Array.isArray(value)) {
+      out[key] = value;
+    } else if (typeof value === "number" && Number.isFinite(value)) {
+      out[key] = value;
+    } else if (typeof value === "string") {
+      out[key] = value.slice(0, 200000);
+    } else if (value && typeof value === "object") {
+      out[key] = value;
+    }
+  }
+  return out;
+}
 
 function gerarCodigoConvite() {
   return crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -30,7 +63,7 @@ export const campanhaController = {
 
   async atualizar(req, res) {
     if (!garantirMestre(req, res)) return;
-    const dados = { ...dadosMestrePadrao, ...req.body };
+    const dados = sanitizeDadosMestre(req.body);
     await User.update({ dadosMestre: dados }, { where: { id: req.user.id } });
     return res.json(dados);
   },
@@ -154,7 +187,30 @@ export const campanhaController = {
         return res.status(403).json({ error: "Acesso restrito aos membros desta campanha." });
       }
 
-      return res.json(campanha);
+      // Sanitização do payload: personagens achatados sem bankPassword/dadosExtras sensíveis;
+      // não-donos da campanha não enxergam notas do mestre nos NPCs.
+      const personagens = await Character.findAll({
+        where: { campanhaId: campanha.id },
+        include: [{ model: AtributosPersonagem, as: "atributos", required: false }],
+      });
+      const npcs = await NPC.findAll({ where: { campanhaId: campanha.id } });
+      const npcsVisiveis = isDono
+        ? npcs
+        : npcs.map((n) => {
+            const data = n.toJSON ? n.toJSON() : { ...n };
+            const extras = { ...(data.dadosExtras || {}) };
+            delete extras.notasMestre;
+            delete extras.secret;
+            delete extras.segredo;
+            data.dadosExtras = extras;
+            return data;
+          });
+
+      const resultado = campanha.toJSON();
+      resultado.personagens = personagens.map(publicCharacter);
+      resultado.npcs = npcsVisiveis;
+      delete resultado.proprietario?.password;
+      return res.json(resultado);
     } catch (error) {
       console.error("Erro ao obter campanha:", error);
       return res.status(500).json({ error: "Erro ao obter campanha." });

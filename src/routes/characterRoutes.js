@@ -15,5 +15,6 @@ router.post("/", validar(fichaSchema), characterController.create);
 router.put("/:id", validar(fichaSchema), characterController.update);
 router.delete("/:id", characterController.delete);
 router.post("/:id/bank/verify", validar(senhaCofreSchema), characterController.verifyBankPassword);
+router.put("/:id/bank/password", validar(senhaCofreSchema), characterController.setBankPassword);
 
 export default router;
