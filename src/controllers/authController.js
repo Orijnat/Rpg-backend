@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
-import { User, Character, Campaign, CampaignMember, registrarAuditoria } from "../models/index.js";
+import { User, Character, Campaign, CampaignMember, AtributosPersonagem, registrarAuditoria } from "../models/index.js";
+import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
 
 function getJwtSecret() {
   if (!process.env.JWT_SECRET) {
@@ -20,10 +21,10 @@ function usuarioParaResposta(usuario) {
   return dados;
 }
 
+const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
 function personagemParaResposta(personagem) {
-  const dados = personagem.toJSON ? personagem.toJSON() : { ...personagem };
-  delete dados.bankPassword;
-  return dados;
+  if (!personagem) return personagem;
+  return publicCharacter(personagem);
 }
 
 function tokenParaUsuario(user) {
@@ -122,6 +123,7 @@ export const authController = {
         hpMax: 70,
         level: 1,
       });
+      await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
 
       // Se ingressou via convite, registra como membro da campanha
       if (targetCampaign) {
@@ -162,13 +164,15 @@ export const authController = {
         { expiresIn: "7d" }
       );
 
+      const characterCompleto = await Character.findByPk(character.id, { include: [includeAtributos] });
+
       return res.status(201).json({
         message: targetCampaign
           ? `Conta criada e vinculada com sucesso à mesa "${targetCampaign.nome}"!`
           : "Usuário e personagem criados com sucesso!",
         user: usuarioParaResposta(user),
-        character: personagemParaResposta(character),
-        characters: [personagemParaResposta(character)],
+        character: personagemParaResposta(characterCompleto),
+        characters: [personagemParaResposta(characterCompleto)],
         campaign: targetCampaign ? targetCampaign.toJSON() : null,
         token,
       });
@@ -208,6 +212,7 @@ export const authController = {
       // Busca todos os personagens deste usuário
       const characters = await Character.findAll({
         where: { userId: user.id },
+        include: [includeAtributos],
         order: [["updated_at", "DESC"]],
       });
 
@@ -244,6 +249,7 @@ export const authController = {
     try {
       const characters = await Character.findAll({
         where: { userId: req.user.id },
+        include: [includeAtributos],
         order: [["updated_at", "DESC"]],
       });
 

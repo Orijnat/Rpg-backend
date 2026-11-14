@@ -69,6 +69,19 @@ const camposFicha = {
   inventory: z.array(json).max(1000).optional(), contracts: z.array(json).max(500).optional(),
   players: z.array(json).max(500).optional(), notesImages: z.array(json).max(500).optional(),
   customClass: texto(100).optional(),
+  xp: numero.int().min(0).optional(),
+  pe: numero.min(0).optional(),
+  peMax: numero.min(0).optional(),
+  peCurrent: numero.min(0).optional(),
+  insanity: numero.min(0).optional(),
+  insanityMax: numero.min(0).optional(),
+  insanityCurrent: numero.min(0).optional(),
+  bp: numero.min(0).optional(),
+  bpMax: numero.min(0).optional(),
+  bpCurrent: numero.min(0).optional(),
+  armorClass: numero.min(0).optional(),
+  initiative: numero.int().optional(),
+  hitDie: texto(20).optional(),
 };
 
 export const fichaSchema = z.object(camposFicha);

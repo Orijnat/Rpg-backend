@@ -2,41 +2,11 @@ import { Character, AtributosPersonagem, InventoryItem, Contract, User, Campaign
 import { Op } from "sequelize";
 import bcrypt from "bcryptjs";
 import { parsePaginationQuery } from "../services/pagination.js";
+import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
 
 const bankAttempts = new Map();
 const BANK_MAX_ATTEMPTS = 5;
 const BANK_LOCK_MS = 15 * 60 * 1000;
-
-// ── Atributos padrão ────────────────────────────────────────────────────────
-const DEFAULT_ATRIBUTOS = {
-  forca: 10, destreza: 10, constituicao: 10,
-  sabedoria: 10, espirito: 10, carisma: 10, inteligencia: 10,
-};
-
-function atributosFromPayload(payload) {
-  return {
-    forca:        payload.FOR ?? payload.forca        ?? DEFAULT_ATRIBUTOS.forca,
-    destreza:     payload.DES ?? payload.destreza     ?? DEFAULT_ATRIBUTOS.destreza,
-    constituicao: payload.CON ?? payload.constituicao ?? DEFAULT_ATRIBUTOS.constituicao,
-    sabedoria:    payload.SAB ?? payload.sabedoria     ?? DEFAULT_ATRIBUTOS.sabedoria,
-    espirito:     payload.ESP ?? payload.espirito      ?? DEFAULT_ATRIBUTOS.espirito,
-    carisma:      payload.CAR ?? payload.carisma       ?? DEFAULT_ATRIBUTOS.carisma,
-    inteligencia: payload.INT ?? payload.inteligencia  ?? DEFAULT_ATRIBUTOS.inteligencia,
-  };
-}
-
-function atributosToPublic(atributos) {
-  if (!atributos) return DEFAULT_ATRIBUTOS;
-  const a = atributos.toJSON ? atributos.toJSON() : atributos;
-  return {
-    forca: a.forca, destreza: a.destreza, constituicao: a.constituicao,
-    sabedoria: a.sabedoria, espirito: a.espirito, carisma: a.carisma,
-    inteligencia: a.inteligencia,
-    // aliases abreviados consumidos pelo frontend
-    FOR: a.forca, DES: a.destreza, CON: a.constituicao,
-    SAB: a.sabedoria, ESP: a.espirito, CAR: a.carisma, INT: a.inteligencia,
-  };
-}
 
 async function canManageCharacter(user, character) {
   if (!user || !character) return false;
@@ -63,75 +33,31 @@ async function canUseCampaign(user, campanhaId) {
   return Boolean(membro);
 }
 
-function publicCharacter(character) {
-  const data = character.toJSON ? character.toJSON() : { ...character };
-  const extras = data.dadosExtras || {};
-
-  // Atributos: vêm de `atributos` (associação) ou fallback em dadosExtras
-  const atributos = data.atributos
-    ? atributosToPublic(data.atributos)
-    : {
-        forca: extras.forca ?? 10, destreza: extras.destreza ?? 10,
-        constituicao: extras.constituicao ?? 10, sabedoria: extras.sabedoria ?? 10,
-        espirito: extras.espirito ?? 10, carisma: extras.carisma ?? 10,
-        inteligencia: extras.inteligencia ?? 10,
-        FOR: extras.FOR ?? extras.forca ?? 10, DES: extras.DES ?? extras.destreza ?? 10,
-        CON: extras.CON ?? extras.constituicao ?? 10, SAB: extras.SAB ?? extras.sabedoria ?? 10,
-        ESP: extras.ESP ?? extras.espirito ?? 10, CAR: extras.CAR ?? extras.carisma ?? 10,
-        INT: extras.INT ?? extras.inteligencia ?? 10,
-      };
-
-  Object.assign(data, atributos);
-
-  // Campos legados vivendo em dados_extras
-  const preferArray = (a, b) => Array.isArray(a) && a.length > 0 ? a : (Array.isArray(b) ? b : []);
-  data.pericias        = preferArray(extras.pericias, extras.skills);
-  data.skills          = data.pericias;
-  data.itensInventario = preferArray(extras.itensInventario, extras.inventory);
-  data.inventory       = data.itensInventario;
-  data.contratosDados  = preferArray(extras.contratosDados, extras.contracts);
-  data.contracts       = data.contratosDados;
-  data.jogadores       = extras.jogadores || [];
-  data.npcs            = extras.npcs || [];
-  data.imagensAnotacoes = extras.imagensAnotacoes ?? extras.notesImages ?? [];
-  data.notesImages     = data.imagensAnotacoes;
-  data.customClass     = extras.customClass ?? "";
-  data.bankSlots       = extras.bankSlots ?? Array.from({ length: 80 }, () => ({ item: "" }));
-  data.notes           = extras.notes ?? "";
-  data.roomNotes       = extras.roomNotes ?? "";
-  data.mountName       = extras.mountName ?? "";
-  data.mountHP         = extras.mountHP ?? 20;
-  data.mountHPMax      = extras.mountHPMax ?? 20;
-  data.mountNotes      = extras.mountNotes ?? "";
-  data.peMax           = extras.peMax ?? 0;
-  data.pe              = extras.pe ?? 0;
-  data.insanityMax     = extras.insanityMax ?? 0;
-  data.insanity        = extras.insanity ?? 0;
-  data.bpMax           = extras.bpMax ?? 0;
-  data.bp              = extras.bp ?? 0;
-  data.armorClass      = extras.armorClass ?? 10;
-  data.initiative      = extras.initiative ?? 0;
-  data.hitDie          = extras.hitDie ?? "d8";
-
-  // Moedas
-  const moedas = extras.moedas || extras.currencies || {};
-  data.latina  = extras.latina  ?? moedas.latina  ?? moedas.platina ?? 0;
-  data.ouro    = extras.ouro    ?? moedas.ouro    ?? 0;
-  data.prata   = extras.prata   ?? moedas.prata   ?? 0;
-  data.cobre   = extras.cobre   ?? moedas.cobre   ?? 0;
-  data.moedas  = { latina: data.latina, ouro: data.ouro, prata: data.prata, cobre: data.cobre };
-  data.currencies = data.moedas;
-
-  if (data.user) {
-    data.owner = {
-      id: data.user.id, username: data.user.username,
-      email: data.user.email, perfil: data.user.perfil,
-    };
-  }
-
-  delete data.bankPassword;
-  return data;
+// Apenas os atributos PRESENTES no payload (updates parciais nunca zeram os demais)
+function atributosPatchFromPayload(payload) {
+  const patch = {};
+  const pick = (key, aliases) => {
+    for (const alias of aliases) {
+      if (payload[alias] !== undefined) {
+        patch[key] = Math.max(1, Math.min(30, Number(payload[alias]) || DEFAULT_ATRIBUTOS[key]));
+        return;
+      }
+    }
+  };
+  pick("forca", ["FOR", "forca"]);
+  pick("destreza", ["DES", "destreza"]);
+  pick("constituicao", ["CON", "constituicao"]);
+  pick("sabedoria", ["SAB", "sabedoria"]);
+  pick("espirito", ["ESP", "espirito"]);
+  pick("carisma", ["CAR", "carisma"]);
+  pick("inteligencia", ["INT", "inteligencia"]);
+  return patch;
 }
+
+const ATRIBUTO_ALIAS = {
+  forca: "FOR", destreza: "DES", constituicao: "CON",
+  sabedoria: "SAB", espirito: "ESP", carisma: "CAR", inteligencia: "INT",
+};
 
 function normalizeCharacterPayload(payload, user) {
   const data = { ...payload };
@@ -146,20 +72,21 @@ function normalizeCharacterPayload(payload, user) {
   if (data.level !== undefined)     data.level = data.level;
   if (data.job !== undefined)       data.job   = data.job;
   if (data.customClass !== undefined && data.job === undefined) data.job = data.customClass;
+  if (data.xp !== undefined || data.experiencia !== undefined) {
+    data.experiencia = Math.max(0, Number(data.xp ?? data.experiencia) || 0);
+  }
+  delete data.xp;
 
   // Tudo mais vai para dados_extras (merge incremental)
   const extras = { ...(payload.dadosExtras || {}) };
 
   // Atributos escalares → delegados para AtributosPersonagem (tratados no create/update)
-  // mas guardamos mirror no extras para leitura offline
-  const atributos = atributosFromPayload(payload);
-  extras.FOR  = atributos.forca;
-  extras.DES  = atributos.destreza;
-  extras.CON  = atributos.constituicao;
-  extras.SAB  = atributos.sabedoria;
-  extras.ESP  = atributos.espirito;
-  extras.CAR  = atributos.carisma;
-  extras.INT  = atributos.inteligencia;
+  // updates parciais só mexem nos atributos enviados; mirror no extras só para os informados
+  const atributosPatch = atributosPatchFromPayload(payload);
+  for (const [key, value] of Object.entries(atributosPatch)) {
+    extras[key] = value;
+    extras[ATRIBUTO_ALIAS[key]] = value;
+  }
 
   // Arrays e campos legados
   if (payload.pericias        !== undefined) extras.pericias        = payload.pericias;
@@ -209,17 +136,18 @@ function normalizeCharacterPayload(payload, user) {
   }
 
   data.dadosExtras = extras;
-  return { characterData: data, atributosData: atributos };
+  return { characterData: data, atributosPatch };
 }
 
 // ── Helpers para upsert de atributos ────────────────────────────────────────
 async function upsertAtributos(personagemId, atributosData) {
   const existing = await AtributosPersonagem.findByPk(personagemId);
   if (existing) {
+    if (Object.keys(atributosData).length === 0) return existing;
     await existing.update(atributosData);
     return existing;
   }
-  return AtributosPersonagem.create({ personagemId, ...atributosData });
+  return AtributosPersonagem.create({ personagemId, ...DEFAULT_ATRIBUTOS, ...atributosData });
 }
 
 // ── Include padrão para busca com atributos ──────────────────────────────────
@@ -306,7 +234,7 @@ export const characterController = {
 
   async create(req, res) {
     try {
-      const { characterData, atributosData } = normalizeCharacterPayload(req.body, req.user);
+      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
       characterData.userId = req.user.id;
 
       if (req.body.campanhaId) {
@@ -316,7 +244,7 @@ export const characterController = {
       }
 
       const newCharacter = await Character.create(characterData);
-      await upsertAtributos(newCharacter.id, atributosData);
+      await upsertAtributos(newCharacter.id, atributosPatch);
 
       await registrarAuditoria({
         usuarioId: req.user.id, campanhaId: newCharacter.campanhaId,
@@ -343,9 +271,9 @@ export const characterController = {
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
 
-      const { characterData, atributosData } = normalizeCharacterPayload(req.body, req.user);
+      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
       await character.update(characterData);
-      await upsertAtributos(id, atributosData);
+      await upsertAtributos(id, atributosPatch);
 
       await registrarAuditoria({
         usuarioId: req.user.id, campanhaId: character.campanhaId,
@@ -364,20 +292,34 @@ export const characterController = {
   async sync(req, res) {
     try {
       const id = req.body?.id;
-      const { characterData, atributosData } = normalizeCharacterPayload(req.body, req.user);
+      const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
 
-      let character;
-      if (id) character = await Character.findByPk(id);
-
-      if (character) {
-        const canManage = await canManageCharacter(req.user, character);
+      if (id) {
+        const target = await Character.findByPk(id);
+        if (!target) {
+          return res.status(404).json({ error: "Personagem não encontrado para sincronização." });
+        }
+        const canManage = await canManageCharacter(req.user, target);
         if (!canManage) return res.status(403).json({ error: "Permissão negada para sincronizar este personagem." });
+        await target.update(characterData);
+        await upsertAtributos(id, atributosPatch);
+        const full = await Character.findByPk(id, { include: [includeAtributos] });
+        return res.json({ success: true, message: "Ficha sincronizada com sucesso.", character: publicCharacter(full) });
+      }
+
+      // Sem id: reaproveita a ficha mais recente do próprio usuário (evita fichas duplicadas);
+      // só cria uma nova quando o usuário ainda não possui nenhuma.
+      let character = await Character.findOne({
+        where: { userId: req.user.id },
+        order: [["updated_at", "DESC"]],
+      });
+      if (character) {
         await character.update(characterData);
-        await upsertAtributos(id, atributosData);
+        await upsertAtributos(character.id, atributosPatch);
       } else {
         characterData.userId = req.user.id;
         character = await Character.create(characterData);
-        await upsertAtributos(character.id, atributosData);
+        await upsertAtributos(character.id, atributosPatch);
       }
 
       const full = await Character.findByPk(character.id, { include: [includeAtributos] });
