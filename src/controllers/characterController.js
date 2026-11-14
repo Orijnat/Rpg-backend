@@ -14,7 +14,19 @@ async function canManageCharacter(user, character) {
   if (user.perfil === "mestre" || user.role === "master") {
     if (character.campanhaId) {
       const campanha = await Campaign.findByPk(character.campanhaId);
-      return campanha?.proprietarioId === user.id;
+      if (campanha?.proprietarioId === user.id) return true;
+    }
+    // Permite que o mestre visualize/gerencie personagens de qualquer jogador que seja membro de suas mesas
+    const campanhasProprias = await Campaign.findAll({
+      where: { proprietarioId: user.id },
+      attributes: ["id"],
+    });
+    const campaignIds = campanhasProprias.map((c) => c.id);
+    if (campaignIds.length > 0) {
+      const membro = await CampaignMember.findOne({
+        where: { usuarioId: character.userId, campanhaId: campaignIds, bloqueado: false },
+      });
+      if (membro) return true;
     }
     return false;
   }
@@ -168,11 +180,35 @@ export const characterController = {
           attributes: ["id"],
         });
         const campaignIds = campanhasProprias.map((c) => c.id);
-        whereClause = { [Op.or]: [{ userId: req.user.id }, { campanhaId: campaignIds }] };
-      }
 
-      if (req.query.campanhaId) {
-        whereClause = { [Op.and]: [whereClause, { campanhaId: req.query.campanhaId }] };
+        let memberUserIds = [];
+        if (campaignIds.length > 0) {
+          const membros = await CampaignMember.findAll({
+            where: {
+              campanhaId: req.query.campanhaId ? req.query.campanhaId : campaignIds,
+              bloqueado: false,
+            },
+            attributes: ["usuarioId"],
+          });
+          memberUserIds = membros.map((m) => m.usuarioId);
+        }
+
+        if (req.query.campanhaId) {
+          whereClause = {
+            [Op.or]: [
+              { campanhaId: req.query.campanhaId },
+              { userId: memberUserIds },
+            ],
+          };
+        } else {
+          whereClause = {
+            [Op.or]: [
+              { userId: req.user.id },
+              { campanhaId: campaignIds },
+              { userId: memberUserIds },
+            ],
+          };
+        }
       }
 
       const pagination = parsePaginationQuery(req.query, { searchFields: ["name", "job"] });

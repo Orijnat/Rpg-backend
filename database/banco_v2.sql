@@ -250,4 +250,28 @@ BEGIN
 END;
 $$;
 
+-- Compatibilidade e Idempotência: Garante novas colunas em instâncias migradas
+ALTER TABLE IF EXISTS campanhas ADD COLUMN IF NOT EXISTS codigo_convite varchar(32);
+ALTER TABLE IF EXISTS campanhas ADD COLUMN IF NOT EXISTS dados_extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE IF EXISTS campanhas ADD COLUMN IF NOT EXISTS metadados jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS pontos_esforco integer NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS pontos_esforco_maximo integer NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS insanidade integer NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS insanidade_maximo integer NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS bonus_pericia smallint NOT NULL DEFAULT 2;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS classe_armadura smallint NOT NULL DEFAULT 10;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS dado_vida varchar(10) NOT NULL DEFAULT 'd8';
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS iniciativa_bonus smallint NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS dados_extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE IF EXISTS personagens ADD COLUMN IF NOT EXISTS extensoes jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE IF EXISTS membros_campanha ADD COLUMN IF NOT EXISTS papel varchar(30) NOT NULL DEFAULT 'jogador';
+ALTER TABLE IF EXISTS membros_campanha ADD COLUMN IF NOT EXISTS bloqueado boolean NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS membros_campanha ADD COLUMN IF NOT EXISTS entrou_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE IF EXISTS usuarios ADD COLUMN IF NOT EXISTS perfil varchar(20) NOT NULL DEFAULT 'jogador';
+ALTER TABLE IF EXISTS usuarios ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS usuarios ADD COLUMN IF NOT EXISTS ultimo_login_at timestamptz;
+
 COMMIT;
