@@ -15,6 +15,7 @@ import { AuditLog, registrarAuditoria } from "./AuditLog.js";
 import { Rolagem } from "./Rolagem.js";
 import { SessaoAutenticacao } from "./SessaoAutenticacao.js";
 import { Arquivo } from "./Arquivo.js";
+import { MapaTatico } from "./MapaTatico.js";
 
 User.prototype.isMestre = function isMestre() {
   return this.perfil === "mestre" || this.role === "master";
@@ -214,5 +215,6 @@ export {
   Rolagem,
   SessaoAutenticacao,
   Arquivo,
+  MapaTatico,
   registrarAuditoria,
 };

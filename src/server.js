@@ -11,6 +11,7 @@ import npcRoutes from "./routes/npcRoutes.js";
 import rolagemRoutes from "./routes/rolagemRoutes.js";
 import arquivoRoutes from "./routes/arquivoRoutes.js";
 import exportRoutes from "./routes/exportRoutes.js";
+import mapaTaticoRoutes from "./routes/mapaTaticoRoutes.js";
 import mestreRecursosRoutes from "./routes/mestreRecursosRoutes.js";
 import { errorHandler } from "./middlewares/validate.js";
 import { generalRateLimiter, getAllowedOrigins } from "./middlewares/security.js";
@@ -74,6 +75,7 @@ app.use("/api/npcs", npcRoutes);
 app.use("/api/rolagens", rolagemRoutes);
 app.use("/api/arquivos", arquivoRoutes);
 app.use("/api/export", exportRoutes);
+app.use("/api/mapa-tatico", mapaTaticoRoutes);
 app.use("/api", mestreRecursosRoutes);
 app.use(errorHandler);
 

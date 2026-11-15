@@ -40,6 +40,28 @@ export const redefinirSenhaSchema = z.object({
   password: z.string().min(6).max(128),
 }).strict();
 
+export const tokenMapaSchema = z.object({
+  id: z.string().min(1).max(64),
+  tipo: z.enum(["personagem", "npc", "monstro", "efeito"]),
+  refId: z.string().uuid().nullable().optional(),
+  name: texto(120).min(1),
+  x: numero.min(0).max(1),
+  y: numero.min(0).max(1),
+  tamanho: z.enum(["P", "M", "G", "E"]).optional(),
+  hp: numero.int().min(0).nullable().optional(),
+  hpMax: numero.int().min(0).nullable().optional(),
+  oculto: z.boolean().optional(),
+});
+
+export const mapaTaticoPatchSchema = z.object({
+  titulo: texto(120).min(1).optional(),
+  arquivoFundoId: z.string().uuid().nullable().optional(),
+  urlFundo: z.string().max(2048).nullable().optional(),
+  gradePx: numero.int().min(10).max(200).optional(),
+  gradeVisivel: z.boolean().optional(),
+  tokens: z.array(tokenMapaSchema).max(200).optional(),
+}).refine((value) => Object.keys(value).length > 0, { message: "Informe ao menos um campo do mapa." });
+
 export const rolagemSchema = z.object({
   formula: texto(60).min(1),
   expressao: texto(255).optional(),
