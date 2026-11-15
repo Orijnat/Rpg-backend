@@ -34,7 +34,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(generalRateLimiter);
 app.use(express.json({ limit: "2mb" }));
 
