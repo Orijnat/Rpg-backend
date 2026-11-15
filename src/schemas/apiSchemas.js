@@ -40,6 +40,12 @@ export const redefinirSenhaSchema = z.object({
   password: z.string().min(6).max(128),
 }).strict();
 
+export const ICONES_MINIATURA = [
+  "shield", "shieldCheck", "sword", "swords", "axe", "wand", "crown", "skull",
+  "ghost", "flame", "zap", "heart", "star", "eye", "cat", "sparkles",
+  "gem", "bug", "bird", "paw", "flask", "moon", "anchor", "hammer",
+];
+
 export const tokenMapaSchema = z.object({
   id: z.string().min(1).max(64),
   tipo: z.enum(["personagem", "npc", "monstro", "efeito"]),
@@ -51,6 +57,7 @@ export const tokenMapaSchema = z.object({
   hp: numero.int().min(0).nullable().optional(),
   hpMax: numero.int().min(0).nullable().optional(),
   oculto: z.boolean().optional(),
+  icone: z.enum(ICONES_MINIATURA).optional(),
 });
 
 export const mapaTaticoPatchSchema = z.object({

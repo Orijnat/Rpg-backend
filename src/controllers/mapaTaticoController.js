@@ -85,15 +85,28 @@ export const mapaTaticoController = {
           // Mestre: substituição completa do placar de miniaturas
           alvo.tokens = body.tokens;
         } else {
-          // Membro: apenas MOVE miniaturas existentes (id conhecido) — nunca cria/apaga/oculta
-          const byId = new Map((Array.isArray(mapa.tokens) ? mapa.tokens : []).map((t) => [t?.id, t]));
-          const movidos = [];
+          // Membro: move miniaturas existentes, cria miniaturas novas; nunca apaga, oculta ou renomeia
+          const existentes = Array.isArray(mapa.tokens) ? mapa.tokens : [];
+          const resultado = existentes.map((t) => ({ ...t }));
+          const indexById = new Map(resultado.map((t, i) => [t?.id, i]));
           for (const t of body.tokens) {
-            const existente = byId.get(t?.id);
-            if (!existente) continue;
-            movidos.push({ ...existente, x: t.x ?? existente.x, y: t.y ?? existente.y });
+            const indice = indexById.get(t?.id);
+            if (indice !== undefined) {
+              const existente = resultado[indice];
+              resultado[indice] = {
+                ...existente,
+                x: t.x ?? existente.x,
+                y: t.y ?? existente.y,
+                tamanho: t.tamanho ?? existente.tamanho,
+                hp: t.hp !== undefined ? t.hp : existente.hp,
+                icone: t.icone ?? existente.icone,
+              };
+            } else {
+              const novo = { ...t, oculto: false };
+              resultado.push(novo);
+              indexById.set(novo.id, resultado.length - 1);
+            }
           }
-          const resultado = mapa.tokens.map((t) => movidos.find((m) => m.id === t.id) ?? t);
           alvo.tokens = resultado;
         }
       }
