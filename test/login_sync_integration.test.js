@@ -74,7 +74,7 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
 
   // 1. Registro
   const reqRegister = {
-    body: { username: "integrante", email: "int@rpg.dev", password: "senhaIntegracao1", characterName: "Integ", characterJob: "Bárbaro" },
+    body: { username: "integrante", email: "int@rpg.dev", password: "senhaIntegracao1", characterName: "Integ", characterJob: "Bárbaro", race: "humano" },
     ip: "127.0.0.1",
     headers: {},
   };

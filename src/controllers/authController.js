@@ -1,7 +1,7 @@
 import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, registrarAuditoria } from "../models/index.js";
-import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
+import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
 import { gerarToken, hashToken, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
 import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
@@ -88,6 +88,10 @@ export const authController = {
         if (!heroName || !heroJob) {
           return res.status(400).json({ error: "Informe o nome e a classe do herói." });
         }
+        const heroRace = req.body.race ? String(req.body.race).trim() : "";
+        if (!heroRace || heroRace.length > 40) {
+          return res.status(400).json({ error: "Informe a raça do herói." });
+        }
       }
 
       // Validação de convite da mesa (se fornecido) — exclusiva de jogadores
@@ -138,19 +142,32 @@ export const authController = {
       // Criação do herói associado (apenas jogadores; mestres não recebem ficha)
       let character = null;
       if (selectedPerfil !== "mestre") {
+        const clampAttr = (value) => Math.max(1, Math.min(30, Math.floor(Number(value)) || 10));
+        const attrSource = atributosFromPayload(req.body);
+        const atributos = Object.fromEntries(
+          Object.entries(attrSource).map(([key, value]) => [key, clampAttr(value)])
+        );
+        const heroHitDie = /^(?:[1-9]\d{0,1})?d(?:4|6|8|10|12|20)$/i.test(String(req.body.hitDie || "").trim())
+          ? String(req.body.hitDie).trim().toLowerCase()
+          : "1d8";
+        const extras = {
+          ...(customClass?.trim() ? { customClass: String(customClass).trim() } : {}),
+          race: String(req.body.race).trim().toLowerCase(),
+          hitDie: heroHitDie,
+        };
         character = await Character.create({
           userId: user.id,
           campanhaId: targetCampaign ? targetCampaign.id : null,
           name: String(characterName).trim(),
           job: String(characterJob).trim(),
-          dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
+          dadosExtras: extras,
           hp: 70,
           hpMax: 70,
           level: 1,
         });
         // Cria o registro de atributos; falha aqui não pode impedir o cadastro do herói
         try {
-          await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
+          await AtributosPersonagem.create({ personagemId: character.id, ...atributos });
         } catch (atributosError) {
           console.error("Falha ao criar atributos do personagem:", atributosError?.message || atributosError);
         }
