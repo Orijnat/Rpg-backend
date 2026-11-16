@@ -81,6 +81,15 @@ export const authController = {
       const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
       const selectedRole = selectedPerfil === "mestre" ? "master" : "player";
 
+      // Herói do jogador exige identidade informada pelo usuário (nada de ficha fictícia pré-pronta)
+      if (selectedPerfil === "jogador") {
+        const heroName = characterName ? String(characterName).trim() : "";
+        const heroJob = characterJob ? String(characterJob).trim() : "";
+        if (!heroName || !heroJob) {
+          return res.status(400).json({ error: "Informe o nome e a classe do herói." });
+        }
+      }
+
       // Validação de convite da mesa (se fornecido) — exclusiva de jogadores
       const rawCode = (inviteCode || codigoConvite || "").trim().toUpperCase();
       if (rawCode && selectedPerfil === "mestre") {
@@ -132,8 +141,8 @@ export const authController = {
         character = await Character.create({
           userId: user.id,
           campanhaId: targetCampaign ? targetCampaign.id : null,
-          name: characterName && String(characterName).trim() ? String(characterName).trim() : "Novo Herói",
-          job: characterJob && String(characterJob).trim() ? String(characterJob).trim() : "Aventureiro",
+          name: String(characterName).trim(),
+          job: String(characterJob).trim(),
           dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
           hp: 70,
           hpMax: 70,

@@ -230,19 +230,6 @@ CREATE OR REPLACE TRIGGER set_updated_at_contracts
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rpg_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rpg_user;
 
--- -----------------------------------------------------------------------------
--- 6. Dados iniciais de exemplo (seed opcional)
--- Remova ou comente este bloco em produção.
--- -----------------------------------------------------------------------------
--- INSERT INTO "characters" (
---   "name", "job", "level", "hp", "hpMax",
---   "attributes", "bankPassword"
--- ) VALUES (
---   'Personagem Inicial', 'Bruxeiro', 1, 70, 70,
---   '{"FOR":14,"DES":16,"CON":14,"SAB":12,"ESP":14,"CAR":10,"INT":10}',
---   '133313'
--- );
-
 -- =============================================================================
 -- Fim do Schema
 -- =============================================================================

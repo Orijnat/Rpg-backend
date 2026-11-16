@@ -384,8 +384,8 @@ export const campanhaController = {
         await Character.create({
           userId: req.user.id,
           campanhaId: campanha.id,
-          name: req.user.username || "Novo Herói",
-          job: "Aventureiro",
+          name: req.user.username,
+          job: "",
           hp: 70,
           hpMax: 70,
           level: 1,

@@ -30,7 +30,6 @@ export const Character = sequelize.define(
       type: DataTypes.STRING(160),
       allowNull: false,
       field: "nome",
-      defaultValue: "Novo Herói",
     },
     descricao: { type: DataTypes.TEXT,        allowNull: true },
     // ── Vida ───────────────────────────────────────────────────────────────

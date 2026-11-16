@@ -233,6 +233,8 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
           username: "outroGuerreiro",
           email: "outro@rpg.com",
           password: "senhaSegura123",
+          characterName: "Outro",
+          characterJob: "Guerreiro",
           inviteCode: "CODIGO-INVALIDO",
         },
         ip: "127.0.0.1",
