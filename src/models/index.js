@@ -17,6 +17,8 @@ import { SessaoAutenticacao } from "./SessaoAutenticacao.js";
 import { Arquivo } from "./Arquivo.js";
 import { MapaTatico } from "./MapaTatico.js";
 import { LogBatalha } from "./LogBatalha.js";
+import { MercadoVendedor } from "./MercadoVendedor.js";
+import { MercadoItem } from "./MercadoItem.js";
 
 User.prototype.isMestre = function isMestre() {
   return this.perfil === "mestre" || this.role === "master";
@@ -212,6 +214,26 @@ LogBatalha.belongsTo(User, {
   as: "usuario",
 });
 
+// Usuário (mestre) <-> Mercado do Mundo
+User.hasMany(MercadoVendedor, {
+  foreignKey: "criadoPorId",
+  as: "mercadoVendedores",
+  onDelete: "CASCADE",
+});
+User.hasMany(MercadoItem, {
+  foreignKey: "criadoPorId",
+  as: "mercadoItens",
+  onDelete: "CASCADE",
+});
+MercadoVendedor.belongsTo(User, {
+  foreignKey: "criadoPorId",
+  as: "criador",
+});
+MercadoItem.belongsTo(User, {
+  foreignKey: "criadoPorId",
+  as: "criador",
+});
+
 export {
   sequelize,
   User,
@@ -232,5 +254,7 @@ export {
   Arquivo,
   MapaTatico,
   LogBatalha,
+  MercadoVendedor,
+  MercadoItem,
   registrarAuditoria,
 };

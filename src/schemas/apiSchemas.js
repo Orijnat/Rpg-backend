@@ -248,3 +248,26 @@ export const sessaoSchema = z.object({
 }).refine((value) => Object.keys(value).length > 0, {
   message: "Informe ao menos um campo da sessão.",
 });
+
+// Mercado do Mundo (mestre): vendedores/tendas e itens em estoque.
+export const mercadoVendedorSchema = z.object({
+  nome: texto(160).min(1),
+  titulo: texto(160).max(160).optional().default(""),
+  regiao: texto(160).min(1),
+  humor: z.string().trim().max(2000).optional().default(""),
+  especialidade: texto(200).max(200).optional().default(""),
+}).strict();
+
+export const mercadoItemSchema = z.object({
+  nome: texto(160).min(1),
+  regiao: texto(160).min(1),
+  vendedor: texto(160).min(1),
+  tipo: texto(80).min(1),
+  quantidade: numero.int().min(0).max(1000000).default(1),
+  preco: numero.min(0).max(10000000).default(0),
+  moeda: z.enum(["ouro", "prata", "cobre", "latina"]).default("ouro"),
+  peso: numero.min(0).max(100000).default(0),
+  raridade: z.enum(["Comum", "Incomum", "Raro", "Muito Raro", "Lendário"]).default("Comum"),
+  descricao: z.string().trim().max(5000).optional().default(""),
+  requisitos: texto(500).max(500).optional().default(""),
+}).strict();

@@ -10,7 +10,6 @@
     "db:init": "bash database/init-db.sh",
     "db:migrate": "node database/migrate.js",
     "db:migrate:undo": "sequelize db:migrate:undo",
-    "db:seed": "node database/seed.js",
     "db:backup": "node database/backup.js",
     "db:prune": "node database/backup.js --prune",
     "uploads:clean": "node database/cleanup-uploads-orfaos.js",
