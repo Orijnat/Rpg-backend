@@ -205,6 +205,11 @@ export const npcSchema = z.object({
   message: "Informe ao menos um campo do NPC.",
 });
 
+export const TIPOS_LOG_BATALHA = [
+  "rolagem", "dano", "cura", "iniciativa", "condicao", "turno",
+  "entrada", "encontro", "recursos", "sistema",
+];
+
 export const encontroSchema = z.object({
   nome: texto(120).min(1).optional(),
   tipo: z.enum(["combate", "social", "exploracao", "outro"]).optional(),
@@ -213,9 +218,20 @@ export const encontroSchema = z.object({
   recursos: z.record(z.string(), json).optional(),
   dadosExtras: z.record(z.string(), json).optional(),
   novoEventoLog: z.string().max(1000).optional(),
+  tipoEventoLog: z.enum(TIPOS_LOG_BATALHA).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: "Informe ao menos um campo do encontro.",
 });
+
+// Tipos que apenas o mestre pode registrar pela rota pública de log.
+export const TIPOS_LOG_BATALHA_MESTRE = ["turno", "encontro", "recursos"];
+
+export const batalhaLogSchema = z.object({
+  tipo: z.enum(TIPOS_LOG_BATALHA),
+  mensagem: texto(500).min(1),
+  dados: z.record(z.string(), json).optional(),
+  encontroId: z.string().uuid().optional(),
+}).strict();
 
 export const sessaoSchema = z.object({
   titulo: texto(200).min(1).optional(),

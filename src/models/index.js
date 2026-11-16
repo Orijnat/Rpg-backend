@@ -16,6 +16,7 @@ import { Rolagem } from "./Rolagem.js";
 import { SessaoAutenticacao } from "./SessaoAutenticacao.js";
 import { Arquivo } from "./Arquivo.js";
 import { MapaTatico } from "./MapaTatico.js";
+import { LogBatalha } from "./LogBatalha.js";
 
 User.prototype.isMestre = function isMestre() {
   return this.perfil === "mestre" || this.role === "master";
@@ -197,6 +198,20 @@ AuditLog.belongsTo(User, {
   as: "usuario",
 });
 
+Encounter.hasMany(LogBatalha, {
+  foreignKey: "encontroId",
+  as: "logBatalha",
+  onDelete: "CASCADE",
+});
+LogBatalha.belongsTo(Encounter, {
+  foreignKey: "encontroId",
+  as: "encontro",
+});
+LogBatalha.belongsTo(User, {
+  foreignKey: "usuarioId",
+  as: "usuario",
+});
+
 export {
   sequelize,
   User,
@@ -216,5 +231,6 @@ export {
   SessaoAutenticacao,
   Arquivo,
   MapaTatico,
+  LogBatalha,
   registrarAuditoria,
 };

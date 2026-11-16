@@ -8,6 +8,8 @@ import { authMiddleware, requireMaster } from "../middlewares/authMiddleware.js"
 import { campanhaSchema, conviteSchema, encontroSchema, membroSchema, notaSchema, npcSchema, sessaoSchema } from "../schemas/apiSchemas.js";
 import { validar } from "../middlewares/validate.js";
 import { sessaoController } from "../controllers/sessaoController.js";
+import { batalhaLogController } from "../controllers/batalhaLogController.js";
+import { batalhaLogSchema } from "../schemas/apiSchemas.js";
 
 const router = Router();
 
@@ -56,6 +58,10 @@ router.post("/:campanhaId/notas", validar(notaSchema), notaController.criar);
 router.get("/:campanhaId/encontros", encontroController.listar);
 router.post("/:campanhaId/encontros", requireMaster, validar(encontroSchema), encontroController.criar);
 router.post("/:campanhaId/iniciativa/ficha", encontroController.receberIniciativaFicha);
+
+// Log de batalha (ações de jogadores e mestre no encontro ativo)
+router.get("/:campanhaId/batalha/log", batalhaLogController.listar);
+router.post("/:campanhaId/batalha/log", validar(batalhaLogSchema), batalhaLogController.registrar);
 
 // Mapas táticos, marcadores e revelação
 router.get("/:campanhaId/mapas", recursoMapaController.listar);

@@ -1,5 +1,6 @@
 import { Encounter, Campaign, CampaignMember, User, registrarAuditoria } from "../models/index.js";
 import { requireCampaignAccess } from "../services/campaignAccess.js";
+import { registrarEventoBatalha } from "../services/batalhaLog.js";
 
 export const encontroController = {
   // Listar encontros da campanha
@@ -56,6 +57,15 @@ export const encontroController = {
         },
       });
 
+      await registrarEventoBatalha({
+        encontro,
+        usuarioId: req.user.id,
+        autor: req.user.username,
+        papel: "mestre",
+        tipo: "encontro",
+        mensagem: `Encontro "${encontro.nome}" criado.`,
+      });
+
       await registrarAuditoria({
         usuarioId: req.user.id,
         campanhaId,
@@ -95,7 +105,7 @@ export const encontroController = {
       if (!encontro) return res.status(404).json({ error: "Encontro não encontrado." });
       if (!(await requireCampaignAccess(req, res, encontro.campanhaId, { ownerOnly: true }))) return;
 
-      const { nome, tipo, ativo, dadosExtras, novoEventoLog } = req.body;
+      const { nome, tipo, ativo, dadosExtras, novoEventoLog, tipoEventoLog } = req.body;
 
       const logExistente = Array.isArray(encontro.dadosExtras?.logHistorico)
         ? encontro.dadosExtras.logHistorico
@@ -124,6 +134,17 @@ export const encontroController = {
         ativo: ativo !== undefined ? Boolean(ativo) : encontro.ativo,
         dadosExtras: mergedExtras,
       });
+
+      if (novoEventoLog) {
+        await registrarEventoBatalha({
+          encontro,
+          usuarioId: req.user.id,
+          autor: req.user.username,
+          papel: "mestre",
+          tipo: tipoEventoLog || "sistema",
+          mensagem: novoEventoLog,
+        });
+      }
 
       return res.json(encontro);
     } catch (error) {
@@ -252,6 +273,16 @@ export const encontroController = {
           lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
           lastModifiedAt: new Date().toISOString(),
         },
+      });
+
+      await registrarEventoBatalha({
+        encontro,
+        usuarioId: req.user.id,
+        autor: req.user.username,
+        papel: isMestreReq ? "mestre" : "jogador",
+        tipo: "iniciativa",
+        mensagem: `${name.trim()} enviou iniciativa ${combatantData.initiative} diretamente da ficha.`,
+        dados: { characterId: characterId || null, iniciativa: combatantData.initiative },
       });
 
       // Espelha a iniciativa na Sala de Guerra do mestre (dados_mestre do proprietário)
