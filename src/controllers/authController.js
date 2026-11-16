@@ -53,7 +53,8 @@ async function emitirLogin(usuario, req) {
 }
 
 export const authController = {
-  // Registro de novo usuário + criação imediata do primeiro personagem
+  // Registro de novo usuário. Jogadores ganham a criação imediata do primeiro
+  // personagem; mestres NUNCA ganham ficha (não são jogadores).
   async register(req, res) {
     try {
       const {
@@ -77,8 +78,14 @@ export const authController = {
         return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
       }
 
-      // Validação de convite da mesa (se fornecido)
+      const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
+      const selectedRole = selectedPerfil === "mestre" ? "master" : "player";
+
+      // Validação de convite da mesa (se fornecido) — exclusiva de jogadores
       const rawCode = (inviteCode || codigoConvite || "").trim().toUpperCase();
+      if (rawCode && selectedPerfil === "mestre") {
+        return res.status(400).json({ error: "Código de convite de mesa é exclusivo para contas de jogador." });
+      }
       let targetCampaign = null;
       if (rawCode) {
         targetCampaign = await Campaign.findOne({
@@ -110,9 +117,6 @@ export const authController = {
         return res.status(409).json({ error: "Este e-mail já está cadastrado." });
       }
 
-      const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
-      const selectedRole = selectedPerfil === "mestre" ? "master" : "player";
-
       // Criação do usuário
       const user = await User.create({
         username: normalizedUsername,
@@ -122,26 +126,29 @@ export const authController = {
         role: selectedRole,
       });
 
-      // Criação do herói associado à campanha (se convite fornecido)
-      const character = await Character.create({
-        userId: user.id,
-        campanhaId: targetCampaign ? targetCampaign.id : null,
-        name: characterName && String(characterName).trim() ? String(characterName).trim() : "Novo Herói",
-        job: characterJob && String(characterJob).trim() ? String(characterJob).trim() : "Aventureiro",
-        dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
-        hp: 70,
-        hpMax: 70,
-        level: 1,
-      });
-      // Cria o registro de atributos; falha aqui não pode impedir o cadastro do herói
-      try {
-        await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
-      } catch (atributosError) {
-        console.error("Falha ao criar atributos do personagem:", atributosError?.message || atributosError);
+      // Criação do herói associado (apenas jogadores; mestres não recebem ficha)
+      let character = null;
+      if (selectedPerfil !== "mestre") {
+        character = await Character.create({
+          userId: user.id,
+          campanhaId: targetCampaign ? targetCampaign.id : null,
+          name: characterName && String(characterName).trim() ? String(characterName).trim() : "Novo Herói",
+          job: characterJob && String(characterJob).trim() ? String(characterJob).trim() : "Aventureiro",
+          dadosExtras: customClass?.trim() ? { customClass: String(customClass).trim() } : {},
+          hp: 70,
+          hpMax: 70,
+          level: 1,
+        });
+        // Cria o registro de atributos; falha aqui não pode impedir o cadastro do herói
+        try {
+          await AtributosPersonagem.create({ personagemId: character.id, ...DEFAULT_ATRIBUTOS });
+        } catch (atributosError) {
+          console.error("Falha ao criar atributos do personagem:", atributosError?.message || atributosError);
+        }
       }
 
-      // Se ingressou via convite, registra como membro da campanha
-      if (targetCampaign) {
+      // Se ingressou via convite, registra como membro da campanha (somente jogadores)
+      if (targetCampaign && character) {
         await CampaignMember.create({
           campanhaId: targetCampaign.id,
           usuarioId: user.id,
@@ -184,23 +191,31 @@ export const authController = {
       const token = await emitirLogin(user, req);
 
       // Monta a resposta em memória (evita round-trip e funciona antes do flush)
-      const characterBase = typeof character?.toJSON === "function" ? character.toJSON() : { ...character };
-      const characterCompleto = {
-        ...characterBase,
-        atributos: { personagemId: characterBase.id, ...DEFAULT_ATRIBUTOS },
-      };
-
-      return res.status(201).json({
+      const payload = {
         message: targetCampaign
           ? `Conta criada e vinculada com sucesso à mesa "${targetCampaign.nome}"!`
-          : "Usuário e personagem criados com sucesso!",
+          : selectedPerfil === "mestre"
+            ? "Conta de mestre criada com sucesso!"
+            : "Usuário e personagem criados com sucesso!",
         user: usuarioParaResposta(user),
-        character: personagemParaResposta(characterCompleto),
-        characters: [personagemParaResposta(characterCompleto)],
         campaign: targetCampaign ? (typeof targetCampaign.toJSON === "function" ? targetCampaign.toJSON() : targetCampaign) : null,
         token,
         ...(devPreviewUrl ? { devPreviewUrl } : {}),
-      });
+      };
+
+      if (character) {
+        const characterBase = typeof character.toJSON === "function" ? character.toJSON() : { ...character };
+        const characterCompleto = {
+          ...characterBase,
+          atributos: { personagemId: characterBase.id, ...DEFAULT_ATRIBUTOS },
+        };
+        payload.character = personagemParaResposta(characterCompleto);
+        payload.characters = [personagemParaResposta(characterCompleto)];
+      } else {
+        payload.characters = [];
+      }
+
+      return res.status(201).json(payload);
     } catch (error) {
       console.error("Erro no registro:", error);
       return res.status(500).json({ error: error.message || "Erro interno ao cadastrar." });
