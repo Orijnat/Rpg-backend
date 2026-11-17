@@ -46,6 +46,33 @@ async function canUseCampaign(user, campanhaId) {
   return Boolean(membro);
 }
 
+// Mestre é o único que pode ALTERAR a raça de uma ficha que já tem raça definida.
+// A primeira escolha é liberada ao dono da ficha (o jogador define a raça uma única vez).
+function isMasterActor(user) {
+  return Boolean(user) && (user.perfil === "mestre" || user.role === "master");
+}
+
+function raceGuardError(user, character, body) {
+  const wantsTouch = body.raceId !== undefined || body.race !== undefined;
+  if (!wantsTouch) return null;
+  const currentId = character?.racaId ?? null;
+  const currentSlug = character?.dadosExtras?.race ?? null;
+  const raw = body.raceId !== undefined ? body.raceId : body.race;
+  const cleared = raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "");
+  // O sync do jogador ecoa o estado do servidor: se o payload casa com a raça
+  // atual, é no-op e não configura "alteração".
+  const sameAsCurrent = cleared
+    ? !currentId && !currentSlug
+    : (String(raw) === String(currentId ?? "") || String(raw).toLowerCase() === String(currentSlug ?? "").toLowerCase());
+  if (sameAsCurrent) return null;
+  const alreadySet = Boolean(currentId) || Boolean(currentSlug);
+  if (!alreadySet) return null; // primeira escolha do jogador
+  if (!isMasterActor(user)) {
+    return { status: 403, error: "Apenas o mestre pode alterar a raça do herói." };
+  }
+  return null;
+}
+
 // Apenas os atributos PRESENTES no payload (updates parciais nunca zeram os demais)
 function atributosPatchFromPayload(payload) {
   const patch = {};
@@ -96,12 +123,14 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   delete data.xp;
 
   // Vínculo com a raça (FK para racas.id); null desfaz o vínculo
+  let racaRemovida = false;
   if (payload.raceId !== undefined) {
     const value = payload.raceId === null ? null : String(payload.raceId).trim();
     if (value && UUID_RE.test(value)) {
       data.racaId = value;
     } else if (value === null || value === "") {
       data.racaId = null;
+      racaRemovida = true;
     }
   }
 
@@ -109,6 +138,7 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   const extras = { ...(existingExtras || {}), ...(payload.dadosExtras || {}) };
   delete extras.bankPassword;
   delete extras.bankPasswordHash;
+  if (racaRemovida) extras.race = null; // evita fallback de slug legado ressuscitar a raça
 
   // Atributos escalares → delegados para AtributosPersonagem (tratados no create/update)
   // updates parciais só mexem nos atributos enviados; mirror no extras só para os informados
@@ -390,6 +420,8 @@ export const characterController = {
       if (!character) return res.status(404).json({ error: "Personagem não encontrado." });
       const canManage = await canManageCharacter(req.user, character);
       if (!canManage) return res.status(403).json({ error: "Permissão negada para atualizar este personagem." });
+      const raceGuard = raceGuardError(req.user, character, req.body || {});
+      if (raceGuard) return res.status(raceGuard.status).json({ error: raceGuard.error });
 
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
@@ -435,6 +467,8 @@ export const characterController = {
       }
       const canManage = await canManageCharacter(req.user, target);
       if (!canManage) return res.status(403).json({ error: "Permissão negada para sincronizar este personagem." });
+      const raceGuard = raceGuardError(req.user, target, req.body);
+      if (raceGuard) return res.status(raceGuard.status).json({ error: raceGuard.error });
 
       // Concorrência otimista: o cliente informa a versão remota que ele viu (`updatedAt`).
       // Comparação estrita em milissegundos: qualquer gravação no servidor entre a leitura
