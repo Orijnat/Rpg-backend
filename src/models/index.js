@@ -3,6 +3,8 @@ import { User } from "./User.js";
 import { Character } from "./Character.js";
 import { AtributosPersonagem } from "./AtributosPersonagem.js";
 import { Race } from "./Race.js";
+import { Class } from "./Class.js";
+import { ClassAbility } from "./ClassAbility.js";
 import { InventoryItem } from "./InventoryItem.js";
 import { Contract } from "./Contract.js";
 import { Campaign } from "./Campaign.js";
@@ -54,6 +56,27 @@ Character.belongsTo(Race, {
 });
 Race.hasMany(Character, {
   foreignKey: "racaId",
+  as: "characters",
+});
+
+// Classe <-> Habilidades de Nível (1:N; referência dinâmica — nada é copiado para a ficha)
+Class.hasMany(ClassAbility, {
+  foreignKey: "classeId",
+  as: "abilities",
+  onDelete: "CASCADE",
+});
+ClassAbility.belongsTo(Class, {
+  foreignKey: "classeId",
+  as: "classe",
+});
+
+// Personagem <-> Classe (FK coluna classe_id; dados_extras->>class guarda o slug legado)
+Character.belongsTo(Class, {
+  foreignKey: "classeId",
+  as: "classe",
+});
+Class.hasMany(Character, {
+  foreignKey: "classeId",
   as: "characters",
 });
 
@@ -245,7 +268,7 @@ MercadoItem.belongsTo(User, {
   as: "criador",
 });
 
-export {
+export { Class, ClassAbility,
   sequelize,
   User,
   Character,

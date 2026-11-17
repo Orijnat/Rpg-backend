@@ -1,9 +1,11 @@
-import { Character, AtributosPersonagem, Race, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
+import { Character, AtributosPersonagem, Race, Class, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 import bcrypt from "bcryptjs";
 import { parsePaginationQuery } from "../services/pagination.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
-import { resolveRaca, racaExtras, hitDieMax } from "../services/racaService.js";
+import { resolveRaca, racaExtras } from "../services/racaService.js";
+import { resolveClasse, classeExtras, normalizeClassKey } from "../services/classeService.js";
+import { hitDieMax } from "../services/hitDie.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -73,6 +75,26 @@ function raceGuardError(user, character, body) {
   return null;
 }
 
+// Mesmo contrato da raça: o jogador escolhe a CLASSE uma única vez; depois, só o mestre altera.
+function classGuardError(user, character, body) {
+  const wantsTouch = body.classId !== undefined || body.classeId !== undefined || body.class !== undefined || body.classe !== undefined;
+  if (!wantsTouch) return null;
+  const currentId = character?.classeId ?? null;
+  const currentSlug = character?.dadosExtras?.class ?? null;
+  const raw = body.classId !== undefined ? body.classId : body.classeId !== undefined ? body.classeId : (body.class !== undefined ? body.class : body.classe);
+  const cleared = raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "");
+  const sameAsCurrent = cleared
+    ? !currentId && !currentSlug
+    : (String(raw) === String(currentId ?? "") || String(raw).toLowerCase() === String(currentSlug ?? "").toLowerCase());
+  if (sameAsCurrent) return null;
+  const alreadySet = Boolean(currentId) || Boolean(currentSlug);
+  if (!alreadySet) return null; // primeira escolha do jogador
+  if (!isMasterActor(user)) {
+    return { status: 403, error: "Apenas o mestre pode alterar a classe do herói." };
+  }
+  return null;
+}
+
 // Apenas os atributos PRESENTES no payload (updates parciais nunca zeram os demais)
 function atributosPatchFromPayload(payload) {
   const patch = {};
@@ -122,6 +144,19 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   }
   delete data.xp;
 
+  // Vínculo com a classe (FK para classes.id); null desfaz o vínculo
+  let classeRemovida = false;
+  const rawClassId = payload.classId !== undefined ? payload.classId : payload.classeId;
+  if (rawClassId !== undefined) {
+    const value = rawClassId === null ? null : String(rawClassId).trim();
+    if (value && UUID_RE.test(value)) {
+      data.classeId = value;
+    } else if (value === null || value === "") {
+      data.classeId = null;
+      classeRemovida = true;
+    }
+  }
+
   // Vínculo com a raça (FK para racas.id); null desfaz o vínculo
   let racaRemovida = false;
   if (payload.raceId !== undefined) {
@@ -139,6 +174,7 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   delete extras.bankPassword;
   delete extras.bankPasswordHash;
   if (racaRemovida) extras.race = null; // evita fallback de slug legado ressuscitar a raça
+  if (classeRemovida) extras.class = null; // evita fallback de slug legado ressuscitar a classe
 
   // Atributos escalares → delegados para AtributosPersonagem (tratados no create/update)
   // updates parciais só mexem nos atributos enviados; mirror no extras só para os informados
@@ -181,6 +217,10 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
     if (slug) extras.race = slug.slice(0, 40);
   }
   if (payload.hitDie          !== undefined) extras.hitDie          = payload.hitDie;
+  if (payload.class != null) {
+    const slug = normalizeClassKey(payload.class);
+    if (slug) extras.class = slug.slice(0, 60);
+  }
 
   // Moedas
   const moedaFonte = payload.moedas || payload.currencies || {};
@@ -218,6 +258,7 @@ async function upsertAtributos(personagemId, atributosData) {
 // ── Include padrão para busca com atributos ──────────────────────────────────
 const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
 const includeRaca = { model: Race, as: "raca", attributes: ["id", "slug", "nome", "dado_de_vida"] };
+const includeClasse = { model: Class, as: "classe", attributes: ["id", "slug", "nome", "dado_de_vida", "atributo_primario", "atributo_secundario", "descricao", "ordem"] };
 // Nunca selecionar `password` aqui: o hash vazaria nos payloads de personagem.
 // A verificação do cofre busca o hash do dono separadamente quando necessário.
 const includeUser = { model: User, as: "user", attributes: ["id", "username", "email", "perfil"] };
@@ -323,7 +364,7 @@ export const characterController = {
       const query = {
         where: whereClause,
         attributes: ["id", "userId", "campanhaId", "name", "level", "job", "hp", "hpMax", "dadosExtras"],
-        include: [includeUser, includeAtributos, includeRaca],
+        include: [includeUser, includeAtributos, includeRaca, includeClasse],
         order: [["updated_at", "DESC"]],
       };
       if (pagination.requested) { query.limit = pagination.limit; query.offset = pagination.offset; }
@@ -350,7 +391,7 @@ export const characterController = {
     try {
       const { id } = req.params;
       const character = await Character.findByPk(id, {
-        include: [includeAtributos, includeUser, includeRaca,
+        include: [includeAtributos, includeUser, includeRaca, includeClasse,
           { model: InventoryItem, as: "inventory" },
           { model: Contract,      as: "contracts" },
         ],
@@ -381,8 +422,15 @@ export const characterController = {
         const raca = await resolveRaca(req.body);
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
+      }
+      const hasClassInput = (req.body.classId !== undefined && req.body.classId !== null && req.body.classId !== "")
+        || (req.body.class !== undefined && req.body.class !== null && req.body.class !== "");
+      if (hasClassInput) {
+        const classe = await resolveClasse(req.body);
+        if (!classe) return res.status(400).json({ error: "Classe inválida ou não encontrada." });
+        req.body = { ...req.body, ...classeExtras(classe), classId: classe.id };
         if (req.body.hp === undefined && req.body.hpMax === undefined) {
-          const maxHp = hitDieMax(raca.dadoDeVida, 70);
+          const maxHp = hitDieMax(classe.dadoDeVida, 70);
           req.body.hp = maxHp;
           req.body.hpMax = maxHp;
         }
@@ -405,7 +453,7 @@ export const characterController = {
         dados: { nome: newCharacter.name }, ip: req.ip,
       });
 
-      const full = await Character.findByPk(newCharacter.id, { include: [includeAtributos, includeRaca] });
+      const full = await Character.findByPk(newCharacter.id, { include: [includeAtributos, includeRaca, includeClasse] });
       return res.status(201).json(publicCharacter(full));
     } catch (error) {
       console.error("Erro ao criar personagem:", error);
@@ -422,6 +470,8 @@ export const characterController = {
       if (!canManage) return res.status(403).json({ error: "Permissão negada para atualizar este personagem." });
       const raceGuard = raceGuardError(req.user, character, req.body || {});
       if (raceGuard) return res.status(raceGuard.status).json({ error: raceGuard.error });
+      const classGuard = classGuardError(req.user, character, req.body || {});
+      if (classGuard) return res.status(classGuard.status).json({ error: classGuard.error });
 
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
@@ -433,6 +483,13 @@ export const characterController = {
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
       }
+      const hasClassInput = (req.body.classId !== undefined && req.body.classId !== null && req.body.classId !== "")
+        || (req.body.class !== undefined && req.body.class !== null && req.body.class !== "");
+      if (hasClassInput) {
+        const classe = await resolveClasse(req.body);
+        if (!classe) return res.status(400).json({ error: "Classe inválida ou não encontrada." });
+        req.body = { ...req.body, ...classeExtras(classe), classId: classe.id };
+      }
       const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user, character.dadosExtras || {});
       await character.update(characterData);
       await upsertAtributos(id, atributosPatch);
@@ -443,7 +500,7 @@ export const characterController = {
         dados: { nome: character.name, alteracoes: req.body }, ip: req.ip,
       });
 
-      const full = await Character.findByPk(id, { include: [includeAtributos, includeRaca] });
+      const full = await Character.findByPk(id, { include: [includeAtributos, includeRaca, includeClasse] });
       return res.json(publicCharacter(full));
     } catch (error) {
       console.error("Erro ao atualizar personagem:", error);
@@ -469,6 +526,8 @@ export const characterController = {
       if (!canManage) return res.status(403).json({ error: "Permissão negada para sincronizar este personagem." });
       const raceGuard = raceGuardError(req.user, target, req.body);
       if (raceGuard) return res.status(raceGuard.status).json({ error: raceGuard.error });
+      const classGuard = classGuardError(req.user, target, req.body);
+      if (classGuard) return res.status(classGuard.status).json({ error: classGuard.error });
 
       // Concorrência otimista: o cliente informa a versão remota que ele viu (`updatedAt`).
       // Comparação estrita em milissegundos: qualquer gravação no servidor entre a leitura
@@ -480,12 +539,19 @@ export const characterController = {
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
       }
+      const hasClassInput = (req.body.classId !== undefined && req.body.classId !== null && req.body.classId !== "")
+        || (req.body.class !== undefined && req.body.class !== null && req.body.class !== "");
+      if (hasClassInput) {
+        const classe = await resolveClasse(req.body);
+        if (!classe) return res.status(400).json({ error: "Classe inválida ou não encontrada." });
+        req.body = { ...req.body, ...classeExtras(classe), classId: classe.id };
+      }
       if (!req.body?.force && req.body?.updatedAt) {
         const seen = Date.parse(req.body.updatedAt);
         const serverUpdatedAt = target.updated_at ?? target.updatedAt;
         const current = serverUpdatedAt instanceof Date ? serverUpdatedAt.getTime() : Date.parse(serverUpdatedAt);
         if (!Number.isNaN(seen) && !Number.isNaN(current) && seen !== current) {
-          const fullRemote = await Character.findByPk(id, { include: [includeAtributos, includeRaca] });
+          const fullRemote = await Character.findByPk(id, { include: [includeAtributos, includeRaca, includeClasse] });
           return res.status(409).json({
             error: "A ficha foi alterada no servidor desde a sua última sincronização.",
             conflict: true,
@@ -499,7 +565,7 @@ export const characterController = {
       await upsertAtributos(id, atributosPatch);
 
       const character = target;
-      const full = await Character.findByPk(character.id, { include: [includeAtributos, includeRaca] });
+      const full = await Character.findByPk(character.id, { include: [includeAtributos, includeRaca, includeClasse] });
       return res.json({ success: true, message: "Ficha sincronizada com sucesso.", character: publicCharacter(full) });
     } catch (error) {
       console.error("Erro ao sincronizar personagem:", error);

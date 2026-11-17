@@ -15,6 +15,9 @@ export const registroSchema = z.object({
   customClass: texto(100).max(100).optional(),
   race: texto(40).min(1).nullable().optional(),
   raceId: z.string().uuid().nullable().optional(),
+  classe: texto(80).nullable().optional(),
+  classeId: z.string().uuid().nullable().optional(),
+  classId: z.string().uuid().nullable().optional(),
   hitDie: texto(20).optional(),
   FOR: atributo.optional(),
   DES: atributo.optional(),
@@ -123,6 +126,8 @@ const camposFicha = {
   ESP: atributo.optional(), CAR: atributo.optional(),
   INT: atributo.optional(),
   raceId: z.string().uuid().nullable().optional(), race: texto(40).nullable().optional(),
+  classeId: z.string().uuid().nullable().optional(), classe: texto(80).nullable().optional(),
+  classId: z.string().uuid().nullable().optional(),
   inventory: z.array(json).max(1000).optional(), contracts: z.array(json).max(500).optional(),
   players: z.array(json).max(500).optional(), notesImages: z.array(json).max(500).optional(),
   customClass: texto(100).optional(),
@@ -265,4 +270,39 @@ export const mercadoItemSchema = z.object({
   raridade: z.enum(["Comum", "Incomum", "Raro", "Muito Raro", "Lendário"]).default("Comum"),
   descricao: z.string().trim().max(5000).optional().default(""),
   requisitos: texto(500).max(500).optional().default(""),
+}).strict();
+
+const ATTR_ENUM = ["FOR", "DES", "CON", "SAB", "ESP", "CAR", "INT"];
+
+export const classeAbilitySchema = z.object({
+  id: z.string().uuid().optional(),
+  nivel: z.number().int().min(1).max(20),
+  nome: texto(120).min(1),
+  tipo: z.enum(["magia", "ativa", "passiva", "reacao"]).default("ativa"),
+  custo: texto(60).max(60).optional().default(""),
+  atributo: z.enum(ATTR_ENUM).default("ESP"),
+  formula: texto(120).max(120).optional().default(""),
+  danoTipo: texto(60).max(60).optional().default(""),
+  alcance: texto(120).max(120).optional().default(""),
+  descricao: texto(2000).max(2000).nullable().optional(),
+}).strict();
+
+export const classeSchema = z.object({
+  nome: texto(80).min(1),
+  dadoDeVida: z.string().trim().regex(/^1d(4|6|8|10|12|20)$/i, "Dado de vida inválido (ex.: 1d8)."),
+  atributoPrimario: z.enum(ATTR_ENUM).nullable().optional(),
+  atributoSecundario: z.enum(ATTR_ENUM).nullable().optional(),
+  descricao: texto(2000).max(2000).nullable().optional(),
+  ordem: z.number().int().min(0).max(10000).optional(),
+  abilities: z.array(classeAbilitySchema).max(200).optional(),
+}).strict();
+
+export const classeUpdateSchema = z.object({
+  nome: texto(80).min(1).optional(),
+  dadoDeVida: z.string().trim().regex(/^1d(4|6|8|10|12|20)$/i, "Dado de vida inválido (ex.: 1d8).").optional(),
+  atributoPrimario: z.enum(ATTR_ENUM).nullable().optional(),
+  atributoSecundario: z.enum(ATTR_ENUM).nullable().optional(),
+  descricao: texto(2000).max(2000).nullable().optional(),
+  ordem: z.number().int().min(0).max(10000).optional(),
+  abilities: z.array(classeAbilitySchema).max(200).optional(),
 }).strict();

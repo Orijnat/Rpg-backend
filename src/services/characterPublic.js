@@ -87,7 +87,12 @@ export function publicCharacter(character) {
   data.raceId = raca?.id ?? data.racaId ?? data.raca_id ?? null;
   data.race = raca?.slug ?? extras.race ?? null;
   data.raceName = raca?.nome ?? null;
-  data.hitDie = raca?.dadoDeVida ?? raca?.dado_de_vida ?? extras.hitDie ?? "d8";
+  // Classe: o vínculo por FK (classes) é a fonte de verdade do DADO DE VIDA e do nome da classe
+  const classe = data.classe ?? null;
+  data.classId = classe?.id ?? data.classeId ?? data.classe_id ?? null;
+  data.classSlug = classe?.slug ?? extras.class ?? null;
+  data.className = classe?.nome ?? null;
+  data.hitDie = classe?.dadoDeVida ?? classe?.dado_de_vida ?? extras.hitDie ?? "d8";
   data.xp              = Number(data.experiencia ?? extras.xp ?? 0) || 0;
 
   // Moedas

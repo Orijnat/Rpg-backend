@@ -1,8 +1,10 @@
 import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
-import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, registrarAuditoria } from "../models/index.js";
+import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, Class, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
-import { resolveRaca, hitDieMax } from "../services/racaService.js";
+import { resolveRaca } from "../services/racaService.js";
+import { resolveClasse } from "../services/classeService.js";
+import { hitDieMax } from "../services/hitDie.js";
 
 import { criarSessao, revogarSessao } from "../services/sessionAuth.js";
 
@@ -22,6 +24,7 @@ function usuarioParaResposta(usuario) {
 
 const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
 const includeRaca = { model: Race, as: "raca", attributes: ["id", "slug", "nome", "dado_de_vida"] };
+const includeClasse = { model: Class, as: "classe", attributes: ["id", "slug", "nome", "dado_de_vida"] };
 function personagemParaResposta(personagem) {
   if (!personagem) return personagem;
   return publicCharacter(personagem);
@@ -99,6 +102,16 @@ export const authController = {
         raca = await resolveRaca(req.body);
         // A raça é OPCIONAL no cadastro: o jogador a escolhe depois, num campo próprio na ficha.
       }
+      // A classe também é opcional no cadastro (escolhida depois na ficha); quando presente,
+      // ela é a fonte de verdade do Dado de Vida / HP inicial.
+      let classe = null;
+      const classeIdInput = req.body.classeId ?? req.body.classId ?? null;
+      if (selectedPerfil === "jogador" && (classeIdInput || req.body.classe)) {
+        classe = await resolveClasse({ classId: classeIdInput, class: req.body.classe });
+        if (!classe) {
+          return res.status(400).json({ error: "Classe inválida ou não encontrada." });
+        }
+      }
 
       // Validação de convite da mesa (se fornecido) — exclusiva de jogadores
       const rawCode = (inviteCode || codigoConvite || "").trim().toUpperCase();
@@ -155,15 +168,17 @@ export const authController = {
         );
         const extras = {
           ...(customClass?.trim() ? { customClass: String(customClass).trim() } : {}),
-          ...(raca ? { race: raca.slug, hitDie: raca.dadoDeVida } : {}),
+          ...(raca ? { race: raca.slug } : {}),
+          ...(classe ? { class: classe.slug, hitDie: classe.dadoDeVida } : (raca ? { hitDie: raca.dadoDeVida } : {})),
         };
-        const baseHp = raca ? hitDieMax(raca.dadoDeVida, 70) : 70;
+        const baseHp = classe ? hitDieMax(classe.dadoDeVida, 70) : (raca ? hitDieMax(raca.dadoDeVida, 70) : 70);
         character = await Character.create({
           userId: user.id,
           campanhaId: targetCampaign ? targetCampaign.id : null,
           name: String(characterName).trim(),
           job: String(characterJob).trim(),
           racaId: raca?.id ?? null,
+          classeId: classe?.id ?? null,
           dadosExtras: extras,
           hp: baseHp,
           hpMax: baseHp,
@@ -220,6 +235,9 @@ export const authController = {
         const characterBase = typeof character.toJSON === "function" ? character.toJSON() : { ...character };
         const characterCompleto = {
           ...characterBase,
+          ...(classe
+            ? { classe: { id: classe.id, slug: classe.slug, nome: classe.nome, dadoDeVida: classe.dadoDeVida } }
+            : {}),
           atributos: { personagemId: characterBase.id, ...DEFAULT_ATRIBUTOS },
         };
         payload.character = personagemParaResposta(characterCompleto);
@@ -264,7 +282,7 @@ export const authController = {
       // Busca todos os personagens deste usuário
       const characters = await Character.findAll({
         where: { userId: user.id },
-        include: [includeAtributos, includeRaca],
+        include: [includeAtributos, includeRaca, includeClasse],
         order: [["updated_at", "DESC"]],
       });
 
@@ -289,7 +307,7 @@ export const authController = {
     try {
       const characters = await Character.findAll({
         where: { userId: req.user.id },
-        include: [includeAtributos, includeRaca],
+        include: [includeAtributos, includeRaca, includeClasse],
         order: [["updated_at", "DESC"]],
       });
 

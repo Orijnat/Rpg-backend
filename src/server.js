@@ -15,6 +15,7 @@ import mapaTaticoRoutes from "./routes/mapaTaticoRoutes.js";
 import mestreRecursosRoutes from "./routes/mestreRecursosRoutes.js";
 import mercadoRoutes from "./routes/mercadoRoutes.js";
 import racasRoutes from "./routes/racasRoutes.js";
+import classesRoutes from "./routes/classesRoutes.js";
 import { errorHandler } from "./middlewares/validate.js";
 import { generalRateLimiter, getAllowedOrigins } from "./middlewares/security.js";
 
@@ -81,6 +82,7 @@ app.use("/api/export", exportRoutes);
 app.use("/api/mapa-tatico", mapaTaticoRoutes);
 app.use("/api/mercado", mercadoRoutes);
 app.use("/api/racas", racasRoutes);
+app.use("/api/classes", classesRoutes);
 app.use("/api", mestreRecursosRoutes);
 app.use(errorHandler);
 

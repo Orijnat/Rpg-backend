@@ -25,6 +25,11 @@ export const Character = sequelize.define(
       allowNull: true,
       field: "campanha_id",
     },
+    classeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "classe_id",
+    },
     racaId: {
       type: DataTypes.UUID,
       allowNull: true,
