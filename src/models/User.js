@@ -89,6 +89,18 @@ export const User = sequelize.define(
       defaultValue: null,
       field: "verification_expires_at",
     },
+    verificationCodeHash: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+      defaultValue: null,
+      field: "verification_code_hash",
+    },
+    verificationCodeExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+      field: "verification_code_expires_at",
+    },
     resetTokenHash: {
       type: DataTypes.STRING(128),
       allowNull: true,

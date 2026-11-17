@@ -11,6 +11,11 @@ export function gerarToken() {
   return { token, hash };
 }
 
+// Código numérico de 6 dígitos para a verificação de e-mail no primeiro acesso.
+export function gerarCodigoVerificacao() {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
 export function hashToken(token) {
   return crypto.createHash("sha256").update(String(token || "")).digest("hex");
 }
@@ -55,11 +60,18 @@ const botao = (url, texto) =>
   `<a href="${url}" style="display:inline-block;margin:14px 0;padding:12px 22px;background:#d69a3d;color:#0f0d0a;border-radius:10px;text-decoration:none;font-weight:bold">${texto}</a>
    <p style="font-size:12px;color:#8a7355;word-break:break-all">Se o botão não funcionar, copie e cole este link:<br>${url}</p>`;
 
-export async function enviarEmailVerificacao({ para, token }) {
+export async function enviarEmailVerificacao({ para, token, code }) {
   const url = `${getFrontendUrl()}/verificar-email?token=${encodeURIComponent(token)}`;
-  const corpo = `<p>Sua chama acaba de ser acesa no Grimorium. Confirme seu e-mail para selar o vínculo:</p>${botao(url, "Verificar meu e-mail")}<p>Se você não criou esta conta, ignore esta mensagem.</p>`;
+  const blocoCodigo = code
+    ? `<div style="margin:16px 0;padding:14px;background:#141720;border:1px solid #d69a3d44;border-radius:12px;text-align:center">
+         <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#d69a3d;margin:0 0 8px">Código de verificação</p>
+         <div style="font-family:'Courier New',monospace;font-size:32px;letter-spacing:12px;font-weight:800;color:#f0d9a0">${code}</div>
+         <p style="font-size:12px;color:#8a7355;margin:8px 0 0">Expira em 15 minutos. Informe-o antes de entrar pela primeira vez.</p>
+       </div>`
+    : "";
+  const corpo = `<p>Sua chama acaba de ser acesa no Grimorium. Confirme seu e-mail para selar o vínculo:</p>${blocoCodigo}${botao(url, "Verificar meu e-mail")}<p>Se você não criou esta conta, ignore esta mensagem.</p>`;
   const result = await enviarEmail({ para, assunto: "Grimorium — verifique seu e-mail", html: shell("Selo de Verificação", corpo) });
-  return { ...result, url };
+  return { ...result, url, code };
 }
 
 export async function enviarEmailRedefinicao({ para, token }) {

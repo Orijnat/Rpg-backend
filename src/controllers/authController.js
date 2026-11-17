@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
 import { resolveRaca, hitDieMax } from "../services/racaService.js";
-import { gerarToken, hashToken, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
+import { gerarToken, hashToken, gerarCodigoVerificacao, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
 import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
 import { getJwtSecret } from "../services/jwtSecret.js";
@@ -14,6 +14,13 @@ function perfilDoUsuario(usuario) {
 
 function usuarioParaResposta(usuario) {
   const dados = typeof usuario.toJSON === "function" ? usuario.toJSON() : { ...usuario };
+  if (dados.password) delete dados.password;
+  delete dados.verificationTokenHash;
+  delete dados.verificationExpiresAt;
+  delete dados.verificationCodeHash;
+  delete dados.verificationCodeExpiresAt;
+  delete dados.resetTokenHash;
+  delete dados.resetTokenExpiresAt;
   dados.perfil = perfilDoUsuario(usuario);
   dados.role = dados.perfil === "mestre" ? "master" : "player";
   return dados;
@@ -70,6 +77,7 @@ export const authController = {
         role,
         inviteCode,
         codigoConvite,
+        confirmPassword,
       } = req.body;
 
       if (!username || !email || !password) {
@@ -78,6 +86,9 @@ export const authController = {
 
       if (password.length < 6) {
         return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
+      }
+      if (confirmPassword !== undefined && confirmPassword !== password) {
+        return res.status(422).json({ error: "As senhas informadas não coincidem." });
       }
 
       const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
@@ -196,36 +207,36 @@ export const authController = {
         });
       }
 
-      // Verificação de e-mail: gera o token e envia (falha de e-mail não impede o cadastro)
+      // Verificação de e-mail: código de 6 dígitos (+ link alternativo). Falha de e-mail não impede o cadastro.
       let devPreviewUrl = null;
+      let devPreviewCode = null;
       try {
         const { token: emailToken, hash } = gerarToken();
+        const code = gerarCodigoVerificacao();
         user.verificationTokenHash = hash;
         user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        user.verificationCodeHash = hashToken(code);
+        user.verificationCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
         await user.save();
-        const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken });
+        const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken, code });
         if (mailResult?.devMode && process.env.NODE_ENV !== "production") {
           devPreviewUrl = mailResult.url;
-          console.log(`[MAIL:dev] Link de verificação para ${user.email}: ${mailResult.url}`);
+          devPreviewCode = code;
+          console.log(`[MAIL:dev] Código de verificação para ${user.email}: ${code}`);
         }
       } catch (mailError) {
         console.error("[MAIL] Falha ao enviar verificação de e-mail:", mailError?.message || mailError);
       }
 
-      // Geração do token JWT (válido por 7 dias) + sessão server-side revogável
-      const token = await emitirLogin(user, req);
-
       // Monta a resposta em memória (evita round-trip e funciona antes do flush)
       const payload = {
-        message: targetCampaign
-          ? `Conta criada e vinculada com sucesso à mesa "${targetCampaign.nome}"!`
-          : selectedPerfil === "mestre"
-            ? "Conta de mestre criada com sucesso!"
-            : "Usuário e personagem criados com sucesso!",
+        message: "Conta criada! Enviamos um código para o seu e-mail — informe-o para ativar a conta antes do primeiro login.",
+        nextStep: "verify-email",
+        email: String(user.email).trim().toLowerCase(),
         user: usuarioParaResposta(user),
         campaign: targetCampaign ? (typeof targetCampaign.toJSON === "function" ? targetCampaign.toJSON() : targetCampaign) : null,
-        token,
         ...(devPreviewUrl ? { devPreviewUrl } : {}),
+        ...(devPreviewCode ? { devCode: devPreviewCode } : {}),
       };
 
       if (character) {
@@ -276,8 +287,12 @@ export const authController = {
 
       // Bloqueio opcional para contas não verificadas (desligado por padrão;
       // ative com REQUIRE_EMAIL_VERIFICATION=true no ambiente).
-      if (String(process.env.REQUIRE_EMAIL_VERIFICATION || "").toLowerCase() === "true" && !user.emailVerified) {
-        return res.status(403).json({ error: "E-mail ainda não verificado. Confira sua caixa de entrada.", code: "EMAIL_NOT_VERIFIED" });
+      if (!user.emailVerified) {
+        return res.status(403).json({
+          error: "E-mail ainda não verificado. Informe o código enviado para o seu e-mail para ativar a conta antes de fazer login.",
+          code: "EMAIL_NOT_VERIFIED",
+          email: String(user.email).trim().toLowerCase(),
+        });
       }
 
       // Busca todos os personagens deste usuário
@@ -300,6 +315,39 @@ export const authController = {
     } catch (error) {
       console.error("Erro no login:", error);
       return res.status(500).json({ error: "Erro interno no servidor ao tentar login." });
+    }
+  },
+
+  // Verificação de e-mail por CÓDIGO (6 dígitos): exige antes do primeiro login
+  async verifyEmailCode(req, res) {
+    try {
+      const { email, code } = req.body || {};
+      if (!email || !code) return res.status(400).json({ error: "E-mail e código são obrigatórios." });
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const user = await User.findOne({ where: { email: normalizedEmail } });
+      if (!user) {
+        return res.status(400).json({ error: "Código inválido ou expirado." });
+      }
+      if (user.emailVerified) {
+        return res.json({ success: true, message: "Este e-mail já está verificado. Faça o login normalmente." });
+      }
+      const hash = hashToken(String(code).trim());
+      if (!user.verificationCodeHash || user.verificationCodeHash !== hash) {
+        return res.status(400).json({ error: "Código inválido ou já utilizado." });
+      }
+      if (user.verificationCodeExpiresAt && new Date(user.verificationCodeExpiresAt) < new Date()) {
+        return res.status(400).json({ error: "Código expirado. Peça um novo e-mail de verificação." });
+      }
+
+      user.emailVerified = true;
+      user.verificationCodeHash = null;
+      user.verificationCodeExpiresAt = null;
+      await user.save();
+      return res.json({ success: true, message: "E-mail verificado com sucesso! Agora você já pode fazer login." });
+    } catch (error) {
+      console.error("Erro ao verificar o código de e-mail:", error);
+      return res.status(500).json({ error: "Erro ao verificar o código de e-mail." });
     }
   },
 
@@ -439,15 +487,20 @@ export const authController = {
       }
 
       const { token: emailToken, hash } = gerarToken();
+      const code = gerarCodigoVerificacao();
       user.verificationTokenHash = hash;
       user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      user.verificationCodeHash = hashToken(code);
+      user.verificationCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
       await user.save();
-      const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken });
+      const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken, code });
       const devPreviewUrl = mailResult?.devMode && process.env.NODE_ENV !== "production" ? mailResult.url : undefined;
+      const devPreviewCode = mailResult?.devMode && process.env.NODE_ENV !== "production" ? code : undefined;
       return res.json({
         success: true,
         message: "E-mail de verificação enviado. Confira sua caixa de entrada.",
         ...(devPreviewUrl ? { devPreviewUrl } : {}),
+        ...(devPreviewCode ? { devCode: devPreviewCode } : {}),
       });
     } catch (error) {
       console.error("Erro ao reenviar verificação:", error);

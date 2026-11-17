@@ -9,6 +9,7 @@ export const registroSchema = z.object({
   username: texto(120).min(1),
   email: z.string().trim().email().max(320),
   password: z.string().min(6).max(128),
+  confirmPassword: z.string().min(6).max(128).optional(),
   characterName: texto(160).max(160).optional(),
   characterJob: texto(100).max(100).optional(),
   customClass: texto(100).max(100).optional(),
@@ -35,6 +36,11 @@ export const loginSchema = z.object({
 
 export const verificarEmailSchema = z.object({
   token: z.string().trim().min(16).max(256),
+}).strict();
+
+export const verificarCodigoSchema = z.object({
+  email: z.string().trim().email().max(320),
+  code: z.string().trim().min(6).max(12),
 }).strict();
 
 export const reenviarVerificacaoSchema = z.object({

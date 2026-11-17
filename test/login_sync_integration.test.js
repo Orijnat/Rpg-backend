@@ -87,12 +87,11 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
   const resRegister = mockRes();
   await authController.register(reqRegister, resRegister);
   assert.equal(resRegister.statusCode, 201);
-  assert.ok(resRegister.body?.token, "register emite token");
-  assert.ok(created.sessao?.tokenHash, "register cria sessão server-side");
+  assert.equal(resRegister.body?.nextStep, "verify-email", "registro exige verificação de e-mail");
   assert.ok(resRegister.body?.characters?.[0]?.id, "character retornado no register");
 
   // 2. /me (token decodificado como faria o middleware real)
-  const payload = JSON.parse(Buffer.from(resRegister.body.token.split(".")[1], "base64url").toString());
+  const payload = { sessionId: "sess-test-000", iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 };
   User.findByPk = async () => created.user;
   const resMe = mockRes();
   await authController.me({ user: created.user, tokenPayload: payload }, resMe);
