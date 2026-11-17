@@ -146,7 +146,10 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   if (payload.bp              !== undefined) extras.bp              = payload.bp;
   if (payload.armorClass      !== undefined) extras.armorClass      = payload.armorClass;
   if (payload.initiative      !== undefined) extras.initiative      = payload.initiative;
-  if (payload.race           !== undefined) extras.race           = String(payload.race).trim().toLowerCase().slice(0, 40);
+  if (payload.race           != null) {
+    const slug = String(payload.race).trim().toLowerCase();
+    if (slug) extras.race = slug.slice(0, 40);
+  }
   if (payload.hitDie          !== undefined) extras.hitDie          = payload.hitDie;
 
   // Moedas
@@ -342,7 +345,9 @@ export const characterController = {
 
   async create(req, res) {
     try {
-      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+      const hasRaceInput = (req.body.raceId !== undefined && req.body.raceId !== null && req.body.raceId !== "")
+        || (req.body.race !== undefined && req.body.race !== null && req.body.race !== "");
+      if (hasRaceInput) {
         const raca = await resolveRaca(req.body);
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
@@ -389,7 +394,9 @@ export const characterController = {
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
 
-      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+      const hasRaceInput = (req.body.raceId !== undefined && req.body.raceId !== null && req.body.raceId !== "")
+        || (req.body.race !== undefined && req.body.race !== null && req.body.race !== "");
+      if (hasRaceInput) {
         const raca = await resolveRaca(req.body);
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
@@ -432,7 +439,9 @@ export const characterController = {
       // Concorrência otimista: o cliente informa a versão remota que ele viu (`updatedAt`).
       // Comparação estrita em milissegundos: qualquer gravação no servidor entre a leitura
       // do cliente e este save invalida a versão ecoada.
-      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+      const hasRaceInput = (req.body.raceId !== undefined && req.body.raceId !== null && req.body.raceId !== "")
+        || (req.body.race !== undefined && req.body.race !== null && req.body.race !== "");
+      if (hasRaceInput) {
         const raca = await resolveRaca(req.body);
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
