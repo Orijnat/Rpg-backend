@@ -113,6 +113,11 @@ export function publicCharacter(character) {
     data.user = data.owner;
   }
 
+  // A associação `classe` (include do Sequelize) é um OBJETO interno de serialização —
+  // o Zod do /characters/sync espera texto(80) em `classe`. Os clientes usam
+  // classId/classSlug/className/hitDie (derivados acima); o objeto cru não pode vazar.
+  delete data.classe;
+
   // Alias camelCase para clientes (o atributo/coluna é snake_case por compatibilidade)
   const isoDate = (value) => {
     const parsed = value instanceof Date ? value : new Date(value);
