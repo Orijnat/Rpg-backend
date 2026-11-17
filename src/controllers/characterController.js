@@ -123,6 +123,12 @@ const ATRIBUTO_ALIAS = {
 
 function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   const data = { ...payload };
+  if (!isMasterActor(user)) {
+    // Jogadores não alteram a progressão (XP/nível) da ficha — só o mestre define.
+    delete data.experiencia;
+    delete data.level;
+    delete data.xp;
+  }
   delete data.id;
   delete data.userId;
   delete data.bankPassword;
@@ -171,6 +177,11 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
 
   // Tudo mais vai para dados_extras (merge sobre o existente para não apagar campos preservados no servidor)
   const extras = { ...(existingExtras || {}), ...(payload.dadosExtras || {}) };
+  if (!isMasterActor(user)) {
+    // extras.xp legado é preservado do servidor — o jogador não altera
+    if (existingExtras?.xp !== undefined) extras.xp = existingExtras.xp;
+    else delete extras.xp;
+  }
   delete extras.bankPassword;
   delete extras.bankPasswordHash;
   if (racaRemovida) extras.race = null; // evita fallback de slug legado ressuscitar a raça
