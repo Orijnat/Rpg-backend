@@ -3,7 +3,16 @@ import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
 import { resolveRaca, hitDieMax } from "../services/racaService.js";
-import { gerarToken, hashToken, gerarCodigoVerificacao, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
+import { gerarToken, hashToken, hashCodigo, hashesIguais, gerarCodigoVerificacao, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
+
+// Limite de tentativas por conta no código de 6 dígitos (além do rate-limit por IP).
+const MAX_TENTATIVAS_CODIGO = Math.max(1, Number(process.env.VERIFICATION_MAX_ATTEMPTS || 5) || 5);
+
+// Verificação de e-mail exigida antes do login? Padrão: sim.
+// REQUIRE_EMAIL_VERIFICATION=false desliga o bloqueio (ex.: ambientes de teste).
+function requireEmailVerification() {
+  return String(process.env.REQUIRE_EMAIL_VERIFICATION ?? "true").trim().toLowerCase() !== "false";
+}
 import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
 import { getJwtSecret } from "../services/jwtSecret.js";
@@ -19,6 +28,7 @@ function usuarioParaResposta(usuario) {
   delete dados.verificationExpiresAt;
   delete dados.verificationCodeHash;
   delete dados.verificationCodeExpiresAt;
+  delete dados.verificationAttempts;
   delete dados.resetTokenHash;
   delete dados.resetTokenExpiresAt;
   dados.perfil = perfilDoUsuario(usuario);
@@ -215,8 +225,9 @@ export const authController = {
         const code = gerarCodigoVerificacao();
         user.verificationTokenHash = hash;
         user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        user.verificationCodeHash = hashToken(code);
+        user.verificationCodeHash = hashCodigo(code);
         user.verificationCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        user.verificationAttempts = 0;
         await user.save();
         const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken, code });
         if (mailResult?.devMode && process.env.NODE_ENV !== "production") {
@@ -285,9 +296,9 @@ export const authController = {
         return res.status(401).json({ error: "Credenciais inválidas. Verifique o usuário e a senha." });
       }
 
-      // Bloqueio opcional para contas não verificadas (desligado por padrão;
-      // ative com REQUIRE_EMAIL_VERIFICATION=true no ambiente).
-      if (!user.emailVerified) {
+      // Bloqueio de contas não verificadas antes do primeiro login (padrão: ativo).
+      // Desligue com REQUIRE_EMAIL_VERIFICATION=false (ex.: ambientes de teste).
+      if (requireEmailVerification() && !user.emailVerified) {
         return res.status(403).json({
           error: "E-mail ainda não verificado. Informe o código enviado para o seu e-mail para ativar a conta antes de fazer login.",
           code: "EMAIL_NOT_VERIFIED",
@@ -332,8 +343,24 @@ export const authController = {
       if (user.emailVerified) {
         return res.json({ success: true, message: "Este e-mail já está verificado. Faça o login normalmente." });
       }
-      const hash = hashToken(String(code).trim());
-      if (!user.verificationCodeHash || user.verificationCodeHash !== hash) {
+      // Código invalidado por excesso de tentativas: exige um novo envio.
+      if (!user.verificationCodeHash || Number(user.verificationAttempts || 0) >= MAX_TENTATIVAS_CODIGO) {
+        if (Number(user.verificationAttempts || 0) >= MAX_TENTATIVAS_CODIGO && user.verificationCodeHash) {
+          user.verificationCodeHash = null;
+          user.verificationCodeExpiresAt = null;
+          await user.save();
+        }
+        return res.status(400).json({ error: "Muitas tentativas incorretas. Peça um novo código de verificação." });
+      }
+      const hash = hashCodigo(String(code).trim());
+      if (!hashesIguais(user.verificationCodeHash, hash)) {
+        user.verificationAttempts = Number(user.verificationAttempts || 0) + 1;
+        if (user.verificationAttempts >= MAX_TENTATIVAS_CODIGO) {
+          // Invalida o código: nem com mais tentativas ele vale.
+          user.verificationCodeHash = null;
+          user.verificationCodeExpiresAt = null;
+        }
+        await user.save();
         return res.status(400).json({ error: "Código inválido ou já utilizado." });
       }
       if (user.verificationCodeExpiresAt && new Date(user.verificationCodeExpiresAt) < new Date()) {
@@ -343,6 +370,7 @@ export const authController = {
       user.emailVerified = true;
       user.verificationCodeHash = null;
       user.verificationCodeExpiresAt = null;
+      user.verificationAttempts = 0;
       await user.save();
       return res.json({ success: true, message: "E-mail verificado com sucesso! Agora você já pode fazer login." });
     } catch (error) {
@@ -464,6 +492,9 @@ export const authController = {
       user.emailVerified = true;
       user.verificationTokenHash = null;
       user.verificationExpiresAt = null;
+      user.verificationCodeHash = null;
+      user.verificationCodeExpiresAt = null;
+      user.verificationAttempts = 0;
       await user.save();
       return res.json({ success: true, message: "E-mail verificado com sucesso!" });
     } catch (error) {
@@ -490,8 +521,9 @@ export const authController = {
       const code = gerarCodigoVerificacao();
       user.verificationTokenHash = hash;
       user.verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      user.verificationCodeHash = hashToken(code);
+      user.verificationCodeHash = hashCodigo(code);
       user.verificationCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      user.verificationAttempts = 0;
       await user.save();
       const mailResult = await enviarEmailVerificacao({ para: user.email, token: emailToken, code });
       const devPreviewUrl = mailResult?.devMode && process.env.NODE_ENV !== "production" ? mailResult.url : undefined;
@@ -557,7 +589,12 @@ export const authController = {
       user.resetTokenHash = null;
       user.resetTokenExpiresAt = null;
       user.passwordChangedAt = new Date(); // revoga JWTs emitidos antes deste momento
-      if (!user.emailVerified) user.emailVerified = true; // provou posse do e-mail
+      if (!user.emailVerified) {
+        user.emailVerified = true; // provou posse do e-mail
+        user.verificationCodeHash = null;
+        user.verificationCodeExpiresAt = null;
+        user.verificationAttempts = 0;
+      }
       await user.save();
       await revogarTodasSessoes(user.id); // encerra sessões abertas em outros aparelhos
 

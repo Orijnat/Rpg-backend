@@ -20,6 +20,22 @@ export function hashToken(token) {
   return crypto.createHash("sha256").update(String(token || "")).digest("hex");
 }
 
+// Código de 6 dígitos: hash com HMAC-SHA256 (chave = JWT_SECRET) em vez de SHA-256 puro.
+// Com SHA-256 puro, um vazamento do banco permitiria varrer as 1M combinações offline
+// e verificar a conta de qualquer usuário; o HMAC exige a chave do servidor.
+export function hashCodigo(code) {
+  const secret = process.env.EMAIL_CODE_SECRET || process.env.JWT_SECRET || "grimorium-dev-insecure-secret";
+  return crypto.createHmac("sha256", secret).update(`email-code:${String(code)}`).digest("hex");
+}
+
+// Comparação em tempo constante para hashes hex.
+export function hashesIguais(a, b) {
+  const ba = Buffer.from(String(a || ""), "utf8");
+  const bb = Buffer.from(String(b || ""), "utf8");
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
 function getFrontendUrl() {
   return (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
 }

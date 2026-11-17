@@ -101,6 +101,12 @@ export const User = sequelize.define(
       defaultValue: null,
       field: "verification_code_expires_at",
     },
+    verificationAttempts: {
+      type: DataTypes.SMALLINT,
+      allowNull: false,
+      defaultValue: 0,
+      field: "verification_attempts",
+    },
     resetTokenHash: {
       type: DataTypes.STRING(128),
       allowNull: true,
@@ -157,6 +163,9 @@ User.prototype.toJSON = function () {
   delete values.senha_hash;
   delete values.verificationTokenHash;
   delete values.verificationExpiresAt;
+  delete values.verificationCodeHash;
+  delete values.verificationCodeExpiresAt;
+  delete values.verificationAttempts;
   delete values.resetTokenHash;
   delete values.resetTokenExpiresAt;
   return values;
