@@ -1,7 +1,7 @@
 // Serviço de e-mail para verificação de conta e redefinição de senha.
-// SMTP via variáveis de ambiente (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM).
-// Sem SMTP configurado: registra o link no log do servidor (modo dev) e,
-// fora de produção, devolve o link na resposta para facilitar testes locais.
+// Provedores: EMAIL_PROVIDER=resend (RESEND_API_KEY) ou smtp (SMTP_HOST/SMTP_*).
+// Sem provedor configurado: registra no log do servidor (modo dev) e,
+// fora de produção, devolve o link/código na resposta para facilitar testes locais.
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
 
@@ -24,8 +24,34 @@ function getFrontendUrl() {
   return (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
+// Provedores suportados:
+//   EMAIL_PROVIDER=resend  -> API HTTP do Resend (RESEND_API_KEY; domínio de testes @resend.dev)
+//   EMAIL_PROVIDER=smtp    -> SMTP com nodemailer (SMTP_HOST/PORT/SECURE/USER/PASS)
+// Sem provedor configurado, o e-mail apenas loga no console (modo dev).
+export function emailProvider() {
+  return (process.env.EMAIL_PROVIDER || "").toLowerCase();
+}
+
 export function isSmtpConfigured() {
+  if (emailProvider() === "resend") return Boolean(process.env.RESEND_API_KEY);
   return Boolean(process.env.SMTP_HOST);
+}
+
+async function enviarViaResend({ para, assunto, html }) {
+  const from = process.env.SMTP_FROM || process.env.RESEND_FROM || "Grimorium <onboarding@resend.dev>";
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to: para, subject: assunto, html }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(`Resend API (${resp.status}): ${data?.message || data?.error || resp.statusText || "erro desconhecido"}`);
+  }
+  return { sent: true, id: data?.id ?? null };
 }
 
 export async function enviarEmail({ para, assunto, html }) {
@@ -33,6 +59,7 @@ export async function enviarEmail({ para, assunto, html }) {
     console.log(`[MAIL:dev] Para: ${para} | Assunto: ${assunto}`);
     return { devMode: true };
   }
+  if (emailProvider() === "resend") return enviarViaResend({ para, assunto, html });
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
