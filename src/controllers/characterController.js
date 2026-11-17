@@ -13,7 +13,7 @@ const bankAttempts = new Map();
 const BANK_MAX_ATTEMPTS = 5;
 const BANK_LOCK_MS = 15 * 60 * 1000;
 
-async function canManageCharacter(user, character) {
+export async function canManageCharacter(user, character) {
   if (!user || !character) return false;
   if (character.userId === user.id) return true;
   if (user.perfil === "mestre" || user.role === "master") {

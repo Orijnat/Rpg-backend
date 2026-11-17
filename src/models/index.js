@@ -1,6 +1,7 @@
 import { sequelize } from "../config/database.js";
 import { User } from "./User.js";
 import { Character } from "./Character.js";
+import { Mount } from "./Mount.js";
 import { AtributosPersonagem } from "./AtributosPersonagem.js";
 import { Race } from "./Race.js";
 import { Class } from "./Class.js";
@@ -36,6 +37,17 @@ User.hasMany(Character, {
 Character.belongsTo(User, {
   foreignKey: "userId",
   as: "user",
+});
+
+// Personagem <-> Montarias (1:N)
+Character.hasMany(Mount, {
+  foreignKey: "characterId",
+  as: "mounts",
+  onDelete: "CASCADE",
+});
+Mount.belongsTo(Character, {
+  foreignKey: "characterId",
+  as: "character",
 });
 
 // Personagem <-> Atributos (1:1)
@@ -272,6 +284,7 @@ export { Class, ClassAbility,
   sequelize,
   User,
   Character,
+  Mount,
   AtributosPersonagem,
   Race,
   InventoryItem,
