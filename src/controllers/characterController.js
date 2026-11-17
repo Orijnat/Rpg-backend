@@ -3,7 +3,7 @@ import { Op } from "sequelize";
 import bcrypt from "bcryptjs";
 import { parsePaginationQuery } from "../services/pagination.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
-import { resolveRaca, racaExtras } from "../services/racaService.js";
+import { resolveRaca, racaExtras, hitDieMax } from "../services/racaService.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -346,6 +346,11 @@ export const characterController = {
         const raca = await resolveRaca(req.body);
         if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
         req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
+        if (req.body.hp === undefined && req.body.hpMax === undefined) {
+          const maxHp = hitDieMax(raca.dadoDeVida, 70);
+          req.body.hp = maxHp;
+          req.body.hpMax = maxHp;
+        }
       }
       const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
       characterData.userId = req.user.id;

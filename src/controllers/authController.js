@@ -2,7 +2,7 @@ import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
-import { resolveRaca } from "../services/racaService.js";
+import { resolveRaca, hitDieMax } from "../services/racaService.js";
 import { gerarToken, hashToken, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
 import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
@@ -92,9 +92,7 @@ export const authController = {
           return res.status(400).json({ error: "Informe o nome e a classe do herói." });
         }
         raca = await resolveRaca(req.body);
-        if (!raca) {
-          return res.status(400).json({ error: "Informe a raça do herói." });
-        }
+        // A raça é OPCIONAL no cadastro: o jogador a escolhe depois, num campo próprio na ficha.
       }
 
       // Validação de convite da mesa (se fornecido) — exclusiva de jogadores
@@ -152,18 +150,18 @@ export const authController = {
         );
         const extras = {
           ...(customClass?.trim() ? { customClass: String(customClass).trim() } : {}),
-          race: raca.slug,
-          hitDie: raca.dadoDeVida,
+          ...(raca ? { race: raca.slug, hitDie: raca.dadoDeVida } : {}),
         };
+        const baseHp = raca ? hitDieMax(raca.dadoDeVida, 70) : 70;
         character = await Character.create({
           userId: user.id,
           campanhaId: targetCampaign ? targetCampaign.id : null,
           name: String(characterName).trim(),
           job: String(characterJob).trim(),
-          racaId: raca.id,
+          racaId: raca?.id ?? null,
           dadosExtras: extras,
-          hp: 70,
-          hpMax: 70,
+          hp: baseHp,
+          hpMax: baseHp,
           level: 1,
         });
         // Cria o registro de atributos; falha aqui não pode impedir o cadastro do herói
