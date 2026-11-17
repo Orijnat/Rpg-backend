@@ -34,28 +34,6 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(128),
 }).strict();
 
-export const verificarEmailSchema = z.object({
-  token: z.string().trim().min(16).max(256),
-}).strict();
-
-export const verificarCodigoSchema = z.object({
-  email: z.string().trim().email().max(320),
-  code: z.string().trim().min(6).max(12),
-}).strict();
-
-export const reenviarVerificacaoSchema = z.object({
-  email: z.string().trim().email().max(320),
-}).strict();
-
-export const pedidoRedefinicaoSchema = z.object({
-  email: z.string().trim().email().max(320),
-}).strict();
-
-export const redefinirSenhaSchema = z.object({
-  token: z.string().trim().min(16).max(256),
-  password: z.string().min(6).max(128),
-}).strict();
-
 export const ICONES_MINIATURA = [
   "shield", "shieldCheck", "sword", "swords", "axe", "wand", "crown", "skull",
   "ghost", "flame", "zap", "heart", "star", "eye", "cat", "sparkles",

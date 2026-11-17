@@ -206,8 +206,7 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
       await authController.register(req, res);
 
       assert.equal(statusCode, 201);
-      assert.equal(jsonBody?.nextStep, "verify-email", "registro exige verificação de e-mail");
-      assert.ok(jsonBody?.email, "e-mail retornado para primeira verificação");
+      assert.ok(jsonBody?.token, "registro emite token (login automático)");
       assert.equal(jsonBody.user.username, "novoGuerreiro");
       assert.equal(jsonBody.character.name, "Thorgar");
 

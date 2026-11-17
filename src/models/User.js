@@ -71,54 +71,6 @@ export const User = sequelize.define(
         imagensMapas: [],
       },
     },
-    emailVerified: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-      field: "email_verified",
-    },
-    verificationTokenHash: {
-      type: DataTypes.STRING(128),
-      allowNull: true,
-      defaultValue: null,
-      field: "verification_token_hash",
-    },
-    verificationExpiresAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      defaultValue: null,
-      field: "verification_expires_at",
-    },
-    verificationCodeHash: {
-      type: DataTypes.STRING(64),
-      allowNull: true,
-      defaultValue: null,
-      field: "verification_code_hash",
-    },
-    verificationCodeExpiresAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      defaultValue: null,
-      field: "verification_code_expires_at",
-    },
-    verificationAttempts: {
-      type: DataTypes.SMALLINT,
-      allowNull: false,
-      defaultValue: 0,
-      field: "verification_attempts",
-    },
-    resetTokenHash: {
-      type: DataTypes.STRING(128),
-      allowNull: true,
-      defaultValue: null,
-      field: "reset_token_hash",
-    },
-    resetTokenExpiresAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      defaultValue: null,
-      field: "reset_token_expires_at",
-    },
     passwordChangedAt: {
       type: DataTypes.DATE,
       allowNull: true,
@@ -161,12 +113,5 @@ User.prototype.toJSON = function () {
   values.role = values.perfil === "mestre" ? "master" : "player";
   delete values.password;
   delete values.senha_hash;
-  delete values.verificationTokenHash;
-  delete values.verificationExpiresAt;
-  delete values.verificationCodeHash;
-  delete values.verificationCodeExpiresAt;
-  delete values.verificationAttempts;
-  delete values.resetTokenHash;
-  delete values.resetTokenExpiresAt;
   return values;
 };

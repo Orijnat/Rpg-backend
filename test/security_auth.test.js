@@ -53,7 +53,6 @@ const fakeUser = {
   ativo: true,
   perfil: "jogador",
   role: "player",
-  emailVerified: true,
   passwordChangedAt: null,
   checkPassword: async (plain) => plain === "senha-correta",
 };
