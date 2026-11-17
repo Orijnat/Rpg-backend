@@ -23,6 +23,42 @@ test("registro aceita perfil, role e código de convite da mesa", () => {
   assert.equal(result.data.perfil, "jogador");
 });
 
+test("registro aceita raça, dado de vida e atributos da ficha", () => {
+  const result = registroSchema.safeParse({
+    username: "elfo1",
+    email: "elfo1@exemplo.com",
+    password: "senhaSegura123",
+    characterName: "Arwen",
+    characterJob: "Bruxeiro",
+    customClass: "Bruxeiro",
+    race: "elfo",
+    hitDie: "1d8",
+    FOR: 10,
+    DES: 15,
+    CON: 10,
+    SAB: 12,
+    ESP: 13,
+    CAR: 10,
+    INT: 12,
+    perfil: "jogador",
+    role: "player",
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.data.race, "elfo");
+  assert.equal(result.data.hitDie, "1d8");
+  assert.equal(result.data.FOR, 10);
+});
+
+test("registro continua rejeitando campos desconhecidos (.strict)", () => {
+  const result = registroSchema.safeParse({
+    username: "admin1",
+    email: "admin1@exemplo.com",
+    password: "senhaSegura123",
+    admin: true,
+  });
+  assert.equal(result.success, false);
+});
+
 test("ficha rejeita atributos fora do intervalo d20", () => {
   const result = fichaSchema.safeParse({ forca: 31, destreza: 10 });
   assert.equal(result.success, false);
