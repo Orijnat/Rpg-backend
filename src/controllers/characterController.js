@@ -374,7 +374,7 @@ export const characterController = {
 
       const query = {
         where: whereClause,
-        attributes: ["id", "userId", "campanhaId", "name", "level", "job", "hp", "hpMax", "dadosExtras"],
+        attributes: ["id", "userId", "campanhaId", "name", "level", "job", "hp", "hpMax", "dadosExtras", "experiencia"],
         include: [includeUser, includeAtributos, includeRaca, includeClasse],
         order: [["updated_at", "DESC"]],
       };
