@@ -30,6 +30,7 @@ function classeToPublic(classe, abilities) {
     secondaryAttribute: c.atributoSecundario ?? c.atributo_secundario ?? null,
     description: c.descricao ?? "",
     ordem: c.ordem ?? 0,
+    criadoPor: c.criadoPor ?? c.criado_por ?? null,
     abilities: rawAbilities.map(abilityToPublic),
   };
 }
@@ -152,6 +153,17 @@ export const classController = {
     try {
       const row = await Class.findByPk(req.params.id);
       if (!row) return res.status(404).json({ error: "Classe não encontrada." });
+      // A REMOÇÃO é exclusiva do mestre que criou a classe. Classes do seed e as
+      // criadas automaticamente no cadastro de jogadores (criado_por ausente ou de outro usuário)
+      // não podem ser removidas daqui — apenas editadas.
+      const donoId = row.criadoPor ?? null;
+      if (!donoId || donoId !== req.user?.id) {
+        return res.status(403).json({
+          error: donoId
+            ? "Apenas o mestre que criou esta classe pode removê-la."
+            : "Esta classe não pode ser removida (não foi criada por você).",
+        });
+      }
       await row.destroy();
       return res.json({ success: true });
     } catch (error) {

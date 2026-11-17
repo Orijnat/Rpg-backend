@@ -10,7 +10,8 @@ const router = Router();
 router.get("/", classController.list);
 router.get("/:id", classController.getById);
 
-// Mestre cria/edita/remove (catálogo global — qualquer mestre pode editar).
+// Mestre cria/edita (catálogo global — qualquer mestre pode editar).
+// Remoção: apenas o mestre que criou a classe (guard no controller).
 router.post("/", authMiddleware, requireMaster, validar(classeSchema), classController.create);
 router.put("/:id", authMiddleware, requireMaster, validar(classeUpdateSchema), classController.update);
 router.delete("/:id", authMiddleware, requireMaster, classController.remove);
