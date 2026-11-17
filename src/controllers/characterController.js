@@ -1,8 +1,11 @@
-import { Character, AtributosPersonagem, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
+import { Character, AtributosPersonagem, Race, InventoryItem, Contract, User, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 import bcrypt from "bcryptjs";
 import { parsePaginationQuery } from "../services/pagination.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS } from "../services/characterPublic.js";
+import { resolveRaca, racaExtras } from "../services/racaService.js";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const bankAttempts = new Map();
 const BANK_MAX_ATTEMPTS = 5;
@@ -92,6 +95,16 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   }
   delete data.xp;
 
+  // Vínculo com a raça (FK para racas.id); null desfaz o vínculo
+  if (payload.raceId !== undefined) {
+    const value = payload.raceId === null ? null : String(payload.raceId).trim();
+    if (value && UUID_RE.test(value)) {
+      data.racaId = value;
+    } else if (value === null || value === "") {
+      data.racaId = null;
+    }
+  }
+
   // Tudo mais vai para dados_extras (merge sobre o existente para não apagar campos preservados no servidor)
   const extras = { ...(existingExtras || {}), ...(payload.dadosExtras || {}) };
   delete extras.bankPassword;
@@ -133,6 +146,7 @@ function normalizeCharacterPayload(payload, user, existingExtras = {}) {
   if (payload.bp              !== undefined) extras.bp              = payload.bp;
   if (payload.armorClass      !== undefined) extras.armorClass      = payload.armorClass;
   if (payload.initiative      !== undefined) extras.initiative      = payload.initiative;
+  if (payload.race           !== undefined) extras.race           = String(payload.race).trim().toLowerCase().slice(0, 40);
   if (payload.hitDie          !== undefined) extras.hitDie          = payload.hitDie;
 
   // Moedas
@@ -170,6 +184,7 @@ async function upsertAtributos(personagemId, atributosData) {
 
 // ── Include padrão para busca com atributos ──────────────────────────────────
 const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
+const includeRaca = { model: Race, as: "raca", attributes: ["id", "slug", "nome", "dado_de_vida"] };
 // Nunca selecionar `password` aqui: o hash vazaria nos payloads de personagem.
 // A verificação do cofre busca o hash do dono separadamente quando necessário.
 const includeUser = { model: User, as: "user", attributes: ["id", "username", "email", "perfil"] };
@@ -275,7 +290,7 @@ export const characterController = {
       const query = {
         where: whereClause,
         attributes: ["id", "userId", "campanhaId", "name", "level", "job", "hp", "hpMax", "dadosExtras"],
-        include: [includeUser, includeAtributos],
+        include: [includeUser, includeAtributos, includeRaca],
         order: [["updated_at", "DESC"]],
       };
       if (pagination.requested) { query.limit = pagination.limit; query.offset = pagination.offset; }
@@ -302,7 +317,7 @@ export const characterController = {
     try {
       const { id } = req.params;
       const character = await Character.findByPk(id, {
-        include: [includeAtributos, includeUser,
+        include: [includeAtributos, includeUser, includeRaca,
           { model: InventoryItem, as: "inventory" },
           { model: Contract,      as: "contracts" },
         ],
@@ -327,6 +342,11 @@ export const characterController = {
 
   async create(req, res) {
     try {
+      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+        const raca = await resolveRaca(req.body);
+        if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
+        req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
+      }
       const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user);
       characterData.userId = req.user.id;
 
@@ -345,7 +365,7 @@ export const characterController = {
         dados: { nome: newCharacter.name }, ip: req.ip,
       });
 
-      const full = await Character.findByPk(newCharacter.id, { include: [includeAtributos] });
+      const full = await Character.findByPk(newCharacter.id, { include: [includeAtributos, includeRaca] });
       return res.status(201).json(publicCharacter(full));
     } catch (error) {
       console.error("Erro ao criar personagem:", error);
@@ -364,6 +384,11 @@ export const characterController = {
       if (req.body.campanhaId !== undefined && !(await canUseCampaign(req.user, req.body.campanhaId)))
         return res.status(403).json({ error: "Você não pode vincular o personagem a esta campanha." });
 
+      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+        const raca = await resolveRaca(req.body);
+        if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
+        req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
+      }
       const { characterData, atributosPatch } = normalizeCharacterPayload(req.body, req.user, character.dadosExtras || {});
       await character.update(characterData);
       await upsertAtributos(id, atributosPatch);
@@ -374,7 +399,7 @@ export const characterController = {
         dados: { nome: character.name, alteracoes: req.body }, ip: req.ip,
       });
 
-      const full = await Character.findByPk(id, { include: [includeAtributos] });
+      const full = await Character.findByPk(id, { include: [includeAtributos, includeRaca] });
       return res.json(publicCharacter(full));
     } catch (error) {
       console.error("Erro ao atualizar personagem:", error);
@@ -402,12 +427,17 @@ export const characterController = {
       // Concorrência otimista: o cliente informa a versão remota que ele viu (`updatedAt`).
       // Comparação estrita em milissegundos: qualquer gravação no servidor entre a leitura
       // do cliente e este save invalida a versão ecoada.
+      if (req.body.raceId !== undefined || req.body.race !== undefined) {
+        const raca = await resolveRaca(req.body);
+        if (!raca) return res.status(400).json({ error: "Raça inválida ou não encontrada." });
+        req.body = { ...req.body, ...racaExtras(raca), raceId: raca.id };
+      }
       if (!req.body?.force && req.body?.updatedAt) {
         const seen = Date.parse(req.body.updatedAt);
         const serverUpdatedAt = target.updated_at ?? target.updatedAt;
         const current = serverUpdatedAt instanceof Date ? serverUpdatedAt.getTime() : Date.parse(serverUpdatedAt);
         if (!Number.isNaN(seen) && !Number.isNaN(current) && seen !== current) {
-          const fullRemote = await Character.findByPk(id, { include: [includeAtributos] });
+          const fullRemote = await Character.findByPk(id, { include: [includeAtributos, includeRaca] });
           return res.status(409).json({
             error: "A ficha foi alterada no servidor desde a sua última sincronização.",
             conflict: true,
@@ -421,7 +451,7 @@ export const characterController = {
       await upsertAtributos(id, atributosPatch);
 
       const character = target;
-      const full = await Character.findByPk(character.id, { include: [includeAtributos] });
+      const full = await Character.findByPk(character.id, { include: [includeAtributos, includeRaca] });
       return res.json({ success: true, message: "Ficha sincronizada com sucesso.", character: publicCharacter(full) });
     } catch (error) {
       console.error("Erro ao sincronizar personagem:", error);

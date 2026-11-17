@@ -5,7 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-de-pelo-meno
 
 import { campanhaController } from "../src/controllers/campanhaController.js";
 import { authController } from "../src/controllers/authController.js";
-import { Campaign, User, Character, CampaignMember, SessaoAutenticacao } from "../src/models/index.js";
+import { Campaign, User, Character, CampaignMember, SessaoAutenticacao, Race } from "../src/models/index.js";
 
 test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
   await t.test("1. consultarConvitePublico rejeita código vazio", async () => {
@@ -32,6 +32,8 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
   await t.test("2. consultarConvitePublico retorna 404 quando mesa não existe", async () => {
     const originalFindOne = Campaign.findOne;
     Campaign.findOne = async () => null;
+    const originalRaceFindOne = Race.findOne;
+    Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8" });
 
     try {
       let statusCode = 200;
@@ -134,6 +136,8 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
     const originalCharCreate = Character.create;
     const originalMemberCreate = CampaignMember.create;
     const originalSessaoCreate = SessaoAutenticacao.create;
+    const originalRaceFindOne = Race.findOne;
+    Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8" });
 
     let memberCreatedWith = null;
     let characterCreatedWith = null;
@@ -221,12 +225,15 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
       Character.create = originalCharCreate;
       CampaignMember.create = originalMemberCreate;
     SessaoAutenticacao.create = originalSessaoCreate;
+    Race.findOne = originalRaceFindOne;
     }
   });
 
   await t.test("6. authController.register rejeita código de convite inválido com 404", async () => {
     const originalCampaignFind = Campaign.findOne;
     Campaign.findOne = async () => null;
+    const originalRaceFindOne2 = Race.findOne;
+    Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8" });
 
     try {
       let statusCode = 200;
@@ -259,6 +266,7 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
       assert.match(jsonBody.error, /Nenhuma mesa de RPG encontrada/i);
     } finally {
       Campaign.findOne = originalCampaignFind;
+      Race.findOne = originalRaceFindOne2;
     }
   });
 });

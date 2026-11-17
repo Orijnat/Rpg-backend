@@ -1,7 +1,8 @@
 import { Op } from "sequelize";
 import jwt from "jsonwebtoken";
-import { User, Character, Campaign, CampaignMember, AtributosPersonagem, registrarAuditoria } from "../models/index.js";
+import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
+import { resolveRaca } from "../services/racaService.js";
 import { gerarToken, hashToken, enviarEmailVerificacao, enviarEmailRedefinicao } from "../services/mailer.js";
 import { criarSessao, revogarSessao, revogarTodasSessoes } from "../services/sessionAuth.js";
 
@@ -19,6 +20,7 @@ function usuarioParaResposta(usuario) {
 }
 
 const includeAtributos = { model: AtributosPersonagem, as: "atributos", required: false };
+const includeRaca = { model: Race, as: "raca", attributes: ["id", "slug", "nome", "dado_de_vida"] };
 function personagemParaResposta(personagem) {
   if (!personagem) return personagem;
   return publicCharacter(personagem);
@@ -81,15 +83,16 @@ export const authController = {
       const selectedPerfil = perfil === "mestre" || role === "master" ? "mestre" : "jogador";
       const selectedRole = selectedPerfil === "mestre" ? "master" : "player";
 
-      // Herói do jogador exige identidade informada pelo usuário (nada de ficha fictícia pré-pronta)
+      // A raça é resolvida contra a tabela `racas` (id ou slug); a fonte de verdade dos atributos e do dado de vida.
+      let raca = null;
       if (selectedPerfil === "jogador") {
         const heroName = characterName ? String(characterName).trim() : "";
         const heroJob = characterJob ? String(characterJob).trim() : "";
         if (!heroName || !heroJob) {
           return res.status(400).json({ error: "Informe o nome e a classe do herói." });
         }
-        const heroRace = req.body.race ? String(req.body.race).trim() : "";
-        if (!heroRace || heroRace.length > 40) {
+        raca = await resolveRaca(req.body);
+        if (!raca) {
           return res.status(400).json({ error: "Informe a raça do herói." });
         }
       }
@@ -147,19 +150,17 @@ export const authController = {
         const atributos = Object.fromEntries(
           Object.entries(attrSource).map(([key, value]) => [key, clampAttr(value)])
         );
-        const heroHitDie = /^(?:[1-9]\d{0,1})?d(?:4|6|8|10|12|20)$/i.test(String(req.body.hitDie || "").trim())
-          ? String(req.body.hitDie).trim().toLowerCase()
-          : "1d8";
         const extras = {
           ...(customClass?.trim() ? { customClass: String(customClass).trim() } : {}),
-          race: String(req.body.race).trim().toLowerCase(),
-          hitDie: heroHitDie,
+          race: raca.slug,
+          hitDie: raca.dadoDeVida,
         };
         character = await Character.create({
           userId: user.id,
           campanhaId: targetCampaign ? targetCampaign.id : null,
           name: String(characterName).trim(),
           job: String(characterJob).trim(),
+          racaId: raca.id,
           dadosExtras: extras,
           hp: 70,
           hpMax: 70,
@@ -284,7 +285,7 @@ export const authController = {
       // Busca todos os personagens deste usuário
       const characters = await Character.findAll({
         where: { userId: user.id },
-        include: [includeAtributos],
+        include: [includeAtributos, includeRaca],
         order: [["updated_at", "DESC"]],
       });
 
@@ -309,7 +310,7 @@ export const authController = {
     try {
       const characters = await Character.findAll({
         where: { userId: req.user.id },
-        include: [includeAtributos],
+        include: [includeAtributos, includeRaca],
         order: [["updated_at", "DESC"]],
       });
 

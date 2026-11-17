@@ -2,6 +2,7 @@ import { sequelize } from "../config/database.js";
 import { User } from "./User.js";
 import { Character } from "./Character.js";
 import { AtributosPersonagem } from "./AtributosPersonagem.js";
+import { Race } from "./Race.js";
 import { InventoryItem } from "./InventoryItem.js";
 import { Contract } from "./Contract.js";
 import { Campaign } from "./Campaign.js";
@@ -44,6 +45,16 @@ Character.hasOne(AtributosPersonagem, {
 AtributosPersonagem.belongsTo(Character, {
   foreignKey: "personagemId",
   as: "personagem",
+});
+
+// Personagem <-> Raça (FK coluna raca_id; dados_extras->>race guarda o slug legado)
+Character.belongsTo(Race, {
+  foreignKey: "racaId",
+  as: "raca",
+});
+Race.hasMany(Character, {
+  foreignKey: "racaId",
+  as: "characters",
 });
 
 // Relacionamentos Personagem <-> Itens de Inventário
@@ -239,6 +250,7 @@ export {
   User,
   Character,
   AtributosPersonagem,
+  Race,
   InventoryItem,
   Contract,
   Campaign,

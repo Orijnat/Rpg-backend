@@ -25,6 +25,13 @@ export const Character = sequelize.define(
       allowNull: true,
       field: "campanha_id",
     },
+    racaId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "raca_id",
+      references: { model: "racas", key: "id" },
+      onDelete: "SET NULL",
+    },
     // ── Identidade ─────────────────────────────────────────────────────────
     name: {
       type: DataTypes.STRING(160),

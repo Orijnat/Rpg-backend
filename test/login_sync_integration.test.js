@@ -8,7 +8,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-de-pelo-meno
 import { authController } from "../src/controllers/authController.js";
 import { characterController } from "../src/controllers/characterController.js";
 import {
-  User, Character, Campaign, CampaignMember, AtributosPersonagem, SessaoAutenticacao,
+  User, Character, Campaign, CampaignMember, AtributosPersonagem, SessaoAutenticacao, Race,
 } from "../src/models/index.js";
 
 function mockRes() {
@@ -33,6 +33,8 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
     membroCreate: CampaignMember.create,
     sessaoCreate: SessaoAutenticacao.create,
     sessaoFindOne: SessaoAutenticacao.findOne,
+    raceFindOne: Race.findOne,
+    raceFindByPk: Race.findByPk,
   };
 
   const created = { user: null, character: null, sessao: null, updates: [] };
@@ -59,6 +61,8 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
   CampaignMember.create = async () => ({});
   SessaoAutenticacao.create = async (data) => { created.sessao = data; return data; };
   SessaoAutenticacao.findOne = async () => ({ revogadaAt: null, expiraAt: new Date(Date.now() + 7 * 24 * 3600 * 1000) });
+  Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8", ordem: 10 });
+  Race.findByPk = async () => null;
 
   t.after(() => {
     Object.assign(User, { create: ORG.userCreate, findOne: ORG.userFindOne, findByPk: ORG.userFindByPk });
@@ -70,6 +74,8 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
     CampaignMember.create = ORG.membroCreate;
     SessaoAutenticacao.create = ORG.sessaoCreate;
     SessaoAutenticacao.findOne = ORG.sessionFindOne || ORG.sessaoFindOne;
+    Race.findOne = ORG.raceFindOne;
+    Race.findByPk = ORG.raceFindByPk;
   });
 
   // 1. Registro

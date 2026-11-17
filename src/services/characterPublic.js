@@ -82,7 +82,12 @@ export function publicCharacter(character) {
   data.bpCurrent       = extras.bpCurrent ?? extras.bp ?? 0;
   data.armorClass      = extras.armorClass ?? 10;
   data.initiative      = extras.initiative ?? 0;
-  data.hitDie          = extras.hitDie ?? "d8";
+  // Raça: o vínculo por FK (racas) é a fonte de verdade; dados_extras->>race é só o fallback legado
+  const raca = data.raca ?? null;
+  data.raceId = raca?.id ?? data.racaId ?? data.raca_id ?? null;
+  data.race = raca?.slug ?? extras.race ?? null;
+  data.raceName = raca?.nome ?? null;
+  data.hitDie = raca?.dadoDeVida ?? raca?.dado_de_vida ?? extras.hitDie ?? "d8";
   data.xp              = Number(data.experiencia ?? extras.xp ?? 0) || 0;
 
   // Moedas
