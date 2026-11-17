@@ -1,4 +1,5 @@
 import { Op } from "sequelize";
+import crypto from "node:crypto";
 import { NPC, Campaign, CampaignMember, registrarAuditoria, sequelize } from "../models/index.js";
 
 async function podeGerenciarCampanha(user, campanhaId) {
@@ -6,6 +7,46 @@ async function podeGerenciarCampanha(user, campanhaId) {
   const campanha = await Campaign.findByPk(campanhaId);
   return Boolean(campanha && campanha.proprietarioId === user.id &&
     (user.perfil === "mestre" || user.role === "master"));
+}
+
+const ATRIBUTOS_NPC = [
+  ["FOR", "forca"], ["DES", "destreza"], ["CON", "constituicao"], ["SAB", "sabedoria"],
+  ["ESP", "espirito"], ["CAR", "carisma"], ["INT", "inteligencia"],
+];
+
+// Atributos do NPC: clamp 1..30, espelho nas duas grafias (legado e curta) + attributes{}
+function atributosParaExtras(input) {
+  const base = input && typeof input === "object" ? input : {};
+  const extras = {};
+  const attributes = {};
+  for (const [curto, longo] of ATRIBUTOS_NPC) {
+    const raw = base[curto] ?? base[longo] ?? 10;
+    const valor = Math.max(1, Math.min(30, Math.floor(Number(raw)) || 10));
+    extras[curto] = valor;
+    extras[longo] = valor;
+    attributes[curto] = valor;
+  }
+  extras.attributes = attributes;
+  return extras;
+}
+
+// Habilidades do NPC: mesmo esquema dos heróis (lib/abilities). Garante id/aprovação do mestre.
+function abilitiesParaExtras(input) {
+  if (!Array.isArray(input)) return [];
+  const now = () => new Date().toISOString();
+  return input.slice(0, 60).map((ability) => {
+    const item = ability && typeof ability === "object" ? { ...ability } : {};
+    if (!item.id || typeof item.id !== "string") item.id = crypto.randomUUID();
+    if (!item.name) item.name = "Habilidade";
+    item.type = typeof item.type === "string" ? item.type : "ativa";
+    item.reqLevel = Math.max(1, Math.floor(Number(item.reqLevel) || 1));
+    item.trainingHours = Math.max(0, Math.floor(Number(item.trainingHours) || 0));
+    if (!item.approvalStatus) item.approvalStatus = "aprovada";
+    if (!item.submittedBy) item.submittedBy = "mestre";
+    if (!item.requestedAt) item.requestedAt = now();
+    item.updatedAt = now();
+    return item;
+  });
 }
 
 const DADOS_MESTRE_KEYS = ["notasMestre", "secret", "segredo", "notas_mestre"];
@@ -150,6 +191,8 @@ export const npcController = {
         acoes,
         notasMestre,
         sharedWithPlayers,
+        atributos,
+        abilities,
       } = req.body;
 
       if (!nome || !nome.trim()) {
@@ -169,6 +212,8 @@ export const npcController = {
         acoes: Array.isArray(acoes) ? acoes : [],
         notasMestre: notasMestre || "",
         sharedWithPlayers: Boolean(sharedWithPlayers),
+        ...atributosParaExtras(atributos),
+        abilities: abilitiesParaExtras(abilities),
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
         lastModifiedAt: new Date().toISOString(),
       };
@@ -247,6 +292,8 @@ export const npcController = {
         acoes,
         notasMestre,
         sharedWithPlayers,
+        atributos,
+        abilities,
       } = req.body;
 
       const dadosExtras = {
@@ -258,6 +305,8 @@ export const npcController = {
         ...(status !== undefined ? { status } : {}),
         ...(attitude !== undefined ? { attitude } : {}),
         ...(acoes !== undefined ? { acoes: Array.isArray(acoes) ? acoes : [] } : {}),
+        ...(atributos !== undefined ? atributosParaExtras(atributos) : {}),
+        ...(abilities !== undefined ? { abilities: abilitiesParaExtras(abilities) } : {}),
         ...(notasMestre !== undefined ? { notasMestre } : {}),
         ...(sharedWithPlayers !== undefined ? { sharedWithPlayers: Boolean(sharedWithPlayers) } : {}),
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
