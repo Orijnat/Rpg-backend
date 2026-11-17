@@ -45,6 +45,48 @@ export async function resolveClasse(payload) {
   return null;
 }
 
+// Procura no catálogo (match sem acento/caixa por slug ou nome) a classe pelo nome
+// digitado; se NÃO existir, CRIA uma entrada global (1d8 padrão, ordem 100, slug
+// único) para que o mestre calibre em /admin/classes (Classes & Níveis).
+// Retorna null quando o nome não contém nenhum caractere alfanumérico.
+export async function findOrCreateClasseByNome(nome, criadoPorId = null) {
+  const clean = String(nome ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+  const key = normalizeClassKey(clean);
+  if (!key || !/[a-z0-9]/.test(key)) return null;
+
+  const all = await Class.findAll();
+  const found = all.find((c) => normalizeClassKey(c.slug) === key || normalizeClassKey(c.nome) === key);
+  if (found) return found;
+
+  const slug = await slugForNome(clean);
+  const displayNome = clean
+    .split(" ")
+    .map((word) =>
+      word === word.toLowerCase()
+        ? word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1)
+        : word,
+    )
+    .join(" ");
+  try {
+    return await Class.create({
+      slug,
+      nome: displayNome,
+      dadoDeVida: "1d8",
+      atributoPrimario: null,
+      atributoSecundario: null,
+      descricao: "Classe criada automaticamente no cadastro de um herói. Calibre o Dado de Vida, os atributos e as habilidades de nível no catálogo (Classes & Níveis).",
+      ordem: 100,
+      criadoPor: criadoPorId ?? null,
+    });
+  } catch (error) {
+    // Corrida de cadastros simultâneos com o mesmo nome: reutiliza a classe criada
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return resolveClasse({ class: clean });
+    }
+    throw error;
+  }
+}
+
 export function classeExtras(classe) {
   return { class: classe.slug, hitDie: classe.dadoDeVida };
 }

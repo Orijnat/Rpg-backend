@@ -5,7 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-de-pelo-meno
 
 import { campanhaController } from "../src/controllers/campanhaController.js";
 import { authController } from "../src/controllers/authController.js";
-import { Campaign, User, Character, CampaignMember, SessaoAutenticacao, Race } from "../src/models/index.js";
+import { Campaign, User, Character, CampaignMember, SessaoAutenticacao, Race, Class } from "../src/models/index.js";
 
 test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
   await t.test("1. consultarConvitePublico rejeita código vazio", async () => {
@@ -136,6 +136,8 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
     const originalCharCreate = Character.create;
     const originalMemberCreate = CampaignMember.create;
     const originalSessaoCreate = SessaoAutenticacao.create;
+    const originalClassFindAll = Class.findAll;
+    const originalClassCreate = Class.create;
     const originalRaceFindOne = Race.findOne;
     Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8" });
 
@@ -143,6 +145,13 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
     let characterCreatedWith = null;
 
     SessaoAutenticacao.create = async () => ({}); // registro de sessão server-side mockado
+    // Catálogo de classes: "Bárbaro" casa com a classe seed (match sem acento/caixa)
+    Class.findAll = async () => [
+      { id: "barbaro-test-1", slug: "barbaro", nome: "Bárbaro", dadoDeVida: "1d12", dado_de_vida: "1d12", ordem: 30 },
+    ];
+    Class.create = async (data) => {
+      throw new Error(`Class.create não deveria ser chamado no registro com classe catalogada (recebeu: ${JSON.stringify(data)})`);
+    };
 
     Campaign.findOne = async ({ where }) => {
       if (where.codigoConvite === "INV-CONVITE-OK") {
@@ -226,6 +235,8 @@ test("Fluxo de Convites de Mesa — Controller Unit Tests", async (t) => {
       CampaignMember.create = originalMemberCreate;
     SessaoAutenticacao.create = originalSessaoCreate;
     Race.findOne = originalRaceFindOne;
+    Class.findAll = originalClassFindAll;
+    Class.create = originalClassCreate;
     }
   });
 

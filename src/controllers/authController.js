@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { User, Character, Campaign, CampaignMember, AtributosPersonagem, Race, Class, registrarAuditoria } from "../models/index.js";
 import { publicCharacter, DEFAULT_ATRIBUTOS, atributosFromPayload } from "../services/characterPublic.js";
 import { resolveRaca } from "../services/racaService.js";
-import { resolveClasse } from "../services/classeService.js";
+import { resolveClasse, findOrCreateClasseByNome } from "../services/classeService.js";
 import { hitDieMax } from "../services/hitDie.js";
 
 import { criarSessao, revogarSessao } from "../services/sessionAuth.js";
@@ -157,6 +157,21 @@ export const authController = {
         perfil: selectedPerfil,
         role: selectedRole,
       });
+
+      // Classe digitada livremente ("Classe / Ocupação"): reutiliza o catálogo
+      // (match sem acento/caixa) ou CRIA uma entrada global (1d8 padrão) — o mestre
+      // calibra em /admin/classes (Classes & Níveis) e a ficha fica vinculada a ela.
+      // Nunca bloqueia o cadastro: em caso de falha do catálogo, o herói fica sem classe.
+      if (selectedPerfil === "jogador" && !classe) {
+        const job = characterJob ? String(characterJob).trim() : "";
+        if (job) {
+          try {
+            classe = await findOrCreateClasseByNome(job, user.id);
+          } catch (catalogError) {
+            console.error("Catálogo de classes indisponível no cadastro:", catalogError?.message || catalogError);
+          }
+        }
+      }
 
       // Criação do herói associado (apenas jogadores; mestres não recebem ficha)
       let character = null;

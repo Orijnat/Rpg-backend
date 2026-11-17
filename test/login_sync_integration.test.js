@@ -8,7 +8,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-de-pelo-meno
 import { authController } from "../src/controllers/authController.js";
 import { characterController } from "../src/controllers/characterController.js";
 import {
-  User, Character, Campaign, CampaignMember, AtributosPersonagem, SessaoAutenticacao, Race,
+  User, Character, Campaign, CampaignMember, AtributosPersonagem, SessaoAutenticacao, Race, Class,
 } from "../src/models/index.js";
 
 function mockRes() {
@@ -35,6 +35,8 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
     sessaoFindOne: SessaoAutenticacao.findOne,
     raceFindOne: Race.findOne,
     raceFindByPk: Race.findByPk,
+    classFindAll: Class.findAll,
+    classCreate: Class.create,
   };
 
   const created = { user: null, character: null, sessao: null, updates: [] };
@@ -63,6 +65,13 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
   SessaoAutenticacao.findOne = async () => ({ revogadaAt: null, expiraAt: new Date(Date.now() + 7 * 24 * 3600 * 1000) });
   Race.findOne = async ({ where } = {}) => ({ id: "11111111-1111-1111-1111-111111111111", slug: where?.slug ?? "humano", nome: "Humano", dadoDeVida: "1d8", dado_de_vida: "1d8", ordem: 10 });
   Race.findByPk = async () => null;
+  // Catálogo de classes: "Bárbaro" casa com a classe seed (match sem acento/caixa)
+  Class.findAll = async () => [
+    { id: "barbaro-test-1", slug: "barbaro", nome: "Bárbaro", dadoDeVida: "1d12", dado_de_vida: "1d12", ordem: 30 },
+  ];
+  Class.create = async (data) => {
+    throw new Error(`Class.create não deveria ser chamado no registro com classe catalogada (recebeu: ${JSON.stringify(data)})`);
+  };
 
   t.after(() => {
     Object.assign(User, { create: ORG.userCreate, findOne: ORG.userFindOne, findByPk: ORG.userFindByPk });
@@ -76,6 +85,8 @@ test("login → personagem → sincronização (com JWT + sessão server-side)",
     SessaoAutenticacao.findOne = ORG.sessionFindOne || ORG.sessaoFindOne;
     Race.findOne = ORG.raceFindOne;
     Race.findByPk = ORG.raceFindByPk;
+    Class.findAll = ORG.classFindAll;
+    Class.create = ORG.classCreate;
   });
 
   // 1. Registro
