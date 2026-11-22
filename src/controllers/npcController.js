@@ -193,6 +193,7 @@ export const npcController = {
         sharedWithPlayers,
         atributos,
         abilities,
+        pericias,
       } = req.body;
 
       if (!nome || !nome.trim()) {
@@ -214,6 +215,7 @@ export const npcController = {
         sharedWithPlayers: Boolean(sharedWithPlayers),
         ...atributosParaExtras(atributos),
         abilities: abilitiesParaExtras(abilities),
+        pericias: Array.isArray(pericias) ? pericias.slice(0, 100) : [],
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
         lastModifiedAt: new Date().toISOString(),
       };
@@ -294,6 +296,7 @@ export const npcController = {
         sharedWithPlayers,
         atributos,
         abilities,
+        pericias,
       } = req.body;
 
       const dadosExtras = {
@@ -307,6 +310,7 @@ export const npcController = {
         ...(acoes !== undefined ? { acoes: Array.isArray(acoes) ? acoes : [] } : {}),
         ...(atributos !== undefined ? atributosParaExtras(atributos) : {}),
         ...(abilities !== undefined ? { abilities: abilitiesParaExtras(abilities) } : {}),
+        ...(pericias !== undefined ? { pericias: Array.isArray(pericias) ? pericias : [] } : {}),
         ...(notasMestre !== undefined ? { notasMestre } : {}),
         ...(sharedWithPlayers !== undefined ? { sharedWithPlayers: Boolean(sharedWithPlayers) } : {}),
         lastModifiedBy: { id: req.user.id, name: req.user.username, role: req.user.role },
