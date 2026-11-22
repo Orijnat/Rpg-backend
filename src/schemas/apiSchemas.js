@@ -199,6 +199,7 @@ export const npcSchema = z.object({
   tags: z.array(texto(50)).max(50).optional(),
   avatar: texto(255).optional(),
   acoes: z.array(json).max(100).optional(),
+  pericias: z.array(json).max(100).optional(),
   habilidadesEspeciais: z.array(json).max(100).optional(),
   notasMestre: z.string().max(100000).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
