@@ -84,6 +84,17 @@ app.use("/api/mercado", mercadoRoutes);
 app.use("/api/racas", racasRoutes);
 app.use("/api/classes", classesRoutes);
 app.use("/api", mestreRecursosRoutes);
+
+// Rotas não mapeadas: responder JSON (padrão da API) em vez do handler HTML default do Express.
+app.use((req, res, next) => {
+  res.status(404).json({
+    status: "error",
+    statusCode: 404,
+    code: "ROUTE_NOT_FOUND",
+    error: "Rota não encontrada.",
+  });
+});
+
 app.use(errorHandler);
 
 // Inicialização e sincronização com PostgreSQL
