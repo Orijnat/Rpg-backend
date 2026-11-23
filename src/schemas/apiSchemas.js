@@ -190,6 +190,11 @@ export const notaSchema = z.object({
 export const npcSchema = z.object({
   nome: texto(120).min(1).optional(),
   papel: texto(80).optional(),
+  descricao: z.string().max(100000).optional(),
+  campanhaId: texto(255).nullable().optional(),
+  sharedWithPlayers: z.boolean().optional(),
+  atributos: z.record(z.string(), json).optional(),
+  abilities: z.array(json).max(60).optional(),
   hp: numero.int().min(0).optional(),
   hpMax: numero.int().min(0).optional(),
   ca: numero.int().min(0).max(100).optional(),

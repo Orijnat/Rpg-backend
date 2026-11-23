@@ -49,6 +49,23 @@ function abilitiesParaExtras(input) {
   });
 }
 
+function normalizarTags(input) {
+  if (!Array.isArray(input)) return [];
+  const vistas = new Set();
+  const tags = [];
+  for (const tag of input) {
+    if (typeof tag !== "string") continue;
+    const valor = tag.trim().slice(0, 50);
+    if (!valor) continue;
+    const chave = valor.toLocaleLowerCase("pt-BR");
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    tags.push(valor);
+    if (tags.length === 50) break;
+  }
+  return tags;
+}
+
 const DADOS_MESTRE_KEYS = ["notasMestre", "secret", "segredo", "notas_mestre"];
 
 // Remove notas privadas do mestre de NPCs visíveis a quem não é proprietário
@@ -207,7 +224,7 @@ export const npcController = {
         ca: Number(ca) || 10,
         iniciativa: Number(iniciativa) || 0,
         avatar: avatar || "",
-        tags: Array.isArray(tags) ? tags : [],
+        tags: normalizarTags(tags),
         status: status || "Ativo",
         attitude: attitude || "Hostil",
         acoes: Array.isArray(acoes) ? acoes : [],
@@ -304,7 +321,7 @@ export const npcController = {
         ...(ca !== undefined ? { ca: Number(ca) } : {}),
         ...(iniciativa !== undefined ? { iniciativa: Number(iniciativa) } : {}),
         ...(avatar !== undefined ? { avatar } : {}),
-        ...(tags !== undefined ? { tags: Array.isArray(tags) ? tags : [] } : {}),
+        ...(tags !== undefined ? { tags: normalizarTags(tags) } : {}),
         ...(status !== undefined ? { status } : {}),
         ...(attitude !== undefined ? { attitude } : {}),
         ...(acoes !== undefined ? { acoes: Array.isArray(acoes) ? acoes : [] } : {}),
